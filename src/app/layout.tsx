@@ -14,8 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hertz Photo Token System",
-  description: "Sistema gestione foto check-out Hertz",
+  title: "Hertz Malta — Admin Dashboard",
+  description: "Vehicle Photo Check-in Portal — Admin Dashboard for managing rental contracts, generating tokens, and uploading checkout reports.",
+  keywords: ["Hertz", "Malta", "check-in", "vehicle", "photo", "car rental", "dashboard", "admin"],
+  icons: {
+    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+  },
 };
 
 export default function RootLayout({
@@ -24,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="it" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
