@@ -1,100 +1,70 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 
+// POST - Submit/finalize the check-in (mark contract completed, mark token used)
 export async function POST(request: NextRequest) {
   try {
-    const { token } = await request.json()
+    const body = await request.json();
+    const { token } = body;
 
     if (!token) {
-      return NextResponse.json(
-        { error: 'Token mancante' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Missing token' }, { status: 400 });
     }
 
-    // Validate token
     const accessToken = await db.accessToken.findUnique({
       where: { token },
-      include: {
-        contract: {
-          include: {
-            photos: true,
-          },
-        },
-      },
-    })
+      include: { contract: { include: { media: true } } },
+    });
 
     if (!accessToken) {
-      return NextResponse.json({ error: 'Token non valido' }, { status: 404 })
+      return NextResponse.json({ error: 'Invalid token' }, { status: 404 });
     }
 
     if (accessToken.usedAt) {
-      return NextResponse.json({ error: 'Token già utilizzato' }, { status: 410 })
+      return NextResponse.json({ error: 'Token already used' }, { status: 400 });
     }
 
-    if (new Date() > accessToken.expiresAt) {
-      return NextResponse.json({ error: 'Token scaduto' }, { status: 410 })
+    if (accessToken.expiresAt < new Date()) {
+      return NextResponse.json({ error: 'Token expired' }, { status: 400 });
     }
 
-    // Check all required photos are submitted
+    // Verify all required items have at least one media
     const requirements = await db.photoRequirement.findMany({
       where: { required: true },
-    })
+    });
 
-    const submittedRequirementIds = new Set(
-      accessToken.contract.photos.map((p) => p.requirementId)
-    )
-
-    const missingPhotos = requirements.filter(
-      (r) => !submittedRequirementIds.has(r.id)
-    )
-
-    if (missingPhotos.length > 0) {
-      return NextResponse.json(
-        {
-          error: 'Foto mancanti',
-          missingPhotos: missingPhotos.map((r) => ({
-            key: r.key,
-            label: r.label,
-          })),
-        },
-        { status: 400 }
-      )
+    for (const req of requirements) {
+      const hasSubmission = accessToken.contract.media.some(m => m.requirementId === req.id);
+      if (!hasSubmission) {
+        return NextResponse.json({
+          error: `Required item "${req.labelEn || req.key}" has no media submission`,
+          code: 'incomplete',
+        }, { status: 400 });
+      }
     }
 
     // Mark contract as completed
     await db.rentalContract.update({
       where: { id: accessToken.contractId },
       data: { status: 'completed' },
-    })
+    });
 
     // Mark token as used
     await db.accessToken.update({
       where: { id: accessToken.id },
       data: { usedAt: new Date() },
-    })
+    });
 
-    // TODO: Send notification email to staff
-    // This would use Microsoft Graph API to send an email or trigger a Power Automate flow
-    console.log(
-      `[CheckIn] Completed for contract ${accessToken.contract.contractNumber}. ` +
-      `Notification should be sent to staff.`
-    )
+    const updatedContract = await db.rentalContract.findUnique({
+      where: { id: accessToken.contractId },
+      include: { media: true, tokens: true },
+    });
 
     return NextResponse.json({
       success: true,
-      contract: {
-        contractNumber: accessToken.contract.contractNumber,
-        customerName: accessToken.contract.customerName,
-        vehiclePlate: accessToken.contract.vehiclePlate,
-        completedAt: new Date().toISOString(),
-      },
-    })
-  } catch (error) {
-    console.error('Submit error:', error)
-    return NextResponse.json(
-      { error: 'Errore durante la sottomissione' },
-      { status: 500 }
-    )
+      contract: updatedContract,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

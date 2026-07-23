@@ -21,7 +21,7 @@ model RentalContract {
   updatedAt     DateTime   @updatedAt
 
   tokens        AccessToken[]
-  photos        PhotoSubmission[]
+  media         MediaSubmission[]
 }
 
 model AccessToken {
@@ -44,17 +44,20 @@ model PhotoRequirement {
   orderIndex  Int     @default(0)
   required    Boolean @default(true)
   icon        String?           // Lucide icon name
+  allowVideo  Boolean @default(true) // Whether video is accepted for this requirement
 
-  submissions PhotoSubmission[]
+  submissions MediaSubmission[]
 }
 
-model PhotoSubmission {
+model MediaSubmission {
   id            String   @id @default(cuid())
   contractId    String
   requirementId String
+  mediaType     String   @default("photo") // photo | video
   fileName      String
   fileSize      Int
   mimeType      String
+  duration      Int?     // Video duration in seconds (null for photos)
   // Local storage path (during development / fallback)
   localPath     String?
   // Microsoft Graph API upload URL / item ID
@@ -64,6 +67,4 @@ model PhotoSubmission {
 
   contract      RentalContract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
   requirement   PhotoRequirement   @relation(fields: [requirementId], references: [id], onDelete: Cascade)
-
-  @@unique([contractId, requirementId])
 }

@@ -1,103 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 
+// POST - Validate a token and return contract info + checklist
 export async function POST(request: NextRequest) {
   try {
-    const { token } = await request.json()
+    const body = await request.json();
+    const { token } = body;
 
-    if (!token || typeof token !== 'string') {
-      return NextResponse.json(
-        { error: 'Token mancante o non valido' },
-        { status: 400 }
-      )
+    if (!token) {
+      return NextResponse.json({ error: 'Missing token' }, { status: 400 });
     }
 
-    // Find the token with contract info
     const accessToken = await db.accessToken.findUnique({
       where: { token },
-      include: {
-        contract: {
-          include: {
-            photos: {
-              include: {
-                requirement: true,
-              },
-            },
-          },
-        },
-      },
-    })
+      include: { contract: { include: { media: true } } },
+    });
 
     if (!accessToken) {
-      return NextResponse.json(
-        { error: 'Token non trovato' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Invalid token', code: 'invalid' }, { status: 404 });
     }
 
-    // Check if token has been used
+    // Check if token is used
     if (accessToken.usedAt) {
-      return NextResponse.json(
-        { error: 'Token già utilizzato. Il check-in fotografico per questo contratto è già stato completato.' },
-        { status: 410 }
-      )
+      return NextResponse.json({ error: 'Token already used', code: 'used', contract: accessToken.contract }, { status: 400 });
     }
 
-    // Check if token has expired
-    if (new Date() > accessToken.expiresAt) {
-      return NextResponse.json(
-        { error: 'Token scaduto. Contattare il personale Hertz per ottenere un nuovo link.' },
-        { status: 410 }
-      )
+    // Check if token is expired
+    if (accessToken.expiresAt < new Date()) {
+      return NextResponse.json({ error: 'Token expired', code: 'expired', contract: accessToken.contract }, { status: 400 });
     }
 
-    // Check if contract already completed
-    if (accessToken.contract.status === 'completed') {
-      return NextResponse.json(
-        { error: 'Check-in fotografico già completato per questo contratto.' },
-        { status: 410 }
-      )
-    }
-
-    // Get all photo requirements
+    // Get photo requirements
     const requirements = await db.photoRequirement.findMany({
       orderBy: { orderIndex: 'asc' },
-    })
+    });
 
-    // Map submitted photos
-    const submittedKeys = new Set(
-      accessToken.contract.photos.map((p) => p.requirement.key)
-    )
+    // Get media submissions for this contract
+    const mediaSubmissions = await db.mediaSubmission.findMany({
+      where: { contractId: accessToken.contractId },
+    });
 
-    const photoChecklist = requirements.map((req) => ({
-      id: req.id,
-      key: req.key,
-      label: req.label,
-      labelEn: req.labelEn,
-      description: req.description,
-      icon: req.icon,
-      required: req.required,
-      completed: submittedKeys.has(req.key),
-    }))
+    // Build checklist with completion status
+    const checklist = requirements.map(req => {
+      const submissions = mediaSubmissions.filter(m => m.requirementId === req.id);
+      return {
+        ...req,
+        submissions,
+        completed: submissions.length > 0,
+        photoCount: submissions.filter(s => s.mediaType === 'photo').length,
+        videoCount: submissions.filter(s => s.mediaType === 'video').length,
+      };
+    });
 
     return NextResponse.json({
       valid: true,
-      contract: {
-        id: accessToken.contract.id,
-        contractNumber: accessToken.contract.contractNumber,
-        customerName: accessToken.contract.customerName,
-        vehiclePlate: accessToken.contract.vehiclePlate,
-        vehicleModel: accessToken.contract.vehicleModel,
-        vehicleColor: accessToken.contract.vehicleColor,
-        status: accessToken.contract.status,
-      },
-      photoChecklist,
-    })
-  } catch (error) {
-    console.error('Token validation error:', error)
-    return NextResponse.json(
-      { error: 'Errore interno del server' },
-      { status: 500 }
-    )
+      contract: accessToken.contract,
+      token: accessToken,
+      checklist,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

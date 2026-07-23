@@ -1,846 +1,1312 @@
-'use client'
+'use client';
 
-import React, { useState, useCallback, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Progress } from '@/components/ui/progress'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  CarFront,
-  Camera,
-  CheckCircle2,
-  XCircle,
-  Upload,
-  Loader2,
-  KeyRound,
-  ClipboardCopy,
-  Plus,
-  RefreshCw,
-  User,
-  CheckCheck,
-  FileSpreadsheet,
-  Download,
-  Globe,
-  FileUp,
-  Car,
-  ArrowLeft,
-  ArrowRight,
-  Gauge,
-  Fuel,
-  AlertTriangle,
-  ImageIcon,
-  ArrowRightToLine,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Search,
-  Hash,
-  FolderOpen,
-  Link2,
-  ClipboardCheck,
-  Clock,
-  BarChart3,
-} from 'lucide-react'
-import { t, LOCALES, type Locale } from '@/lib/i18n'
+  CarFront, ArrowRight, ArrowLeft, Car, Armchair, Camera, Video, Upload,
+  CheckCircle2, XCircle, Clock, Copy, Trash2, Edit3, Plus, FileUp,
+  Search, ChevronRight, Globe, Play, Loader2, AlertCircle, Shield,
+  Send, RefreshCw, Eye, X, Link, QrCode, Download, Info
+} from 'lucide-react';
+import { t, LOCALES, type Locale, RTL_LOCALES, getPhotoLabel } from '@/lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
-// ==================== TYPES ====================
-
-interface PhotoChecklistItem {
-  id: string; key: string; label: string; labelEn: string | null
-  description: string | null; icon: string; required: boolean; completed: boolean
+// Types
+interface RentalContract {
+  id: string;
+  contractNumber: string;
+  customerName: string;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  vehiclePlate: string;
+  vehicleModel: string;
+  vehicleColor?: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  tokens?: AccessToken[];
+  media?: MediaSubmission[];
 }
 
-interface ContractInfo {
-  id: string; contractNumber: string; customerName: string
-  vehiclePlate: string; vehicleModel: string; vehicleColor: string | null; status: string
+interface AccessToken {
+  id: string;
+  token: string;
+  contractId: string;
+  expiresAt: string;
+  usedAt?: string | null;
+  createdAt: string;
 }
 
-interface BulkUploadResult {
-  success: boolean
-  summary: { total: number; created: number; skipped: number; errors: number }
-  detectedColumns: string[]
-  mappedColumns: Record<string, string>
-  results: Array<{
-    row: number; contractNumber: string; customerName: string
-    vehiclePlate: string; vehicleModel: string
-    status: 'created' | 'skipped' | 'error'
-    token?: string; link?: string; error?: string
-  }>
+interface PhotoRequirement {
+  id: string;
+  key: string;
+  label: string;
+  labelEn?: string | null;
+  description?: string | null;
+  orderIndex: number;
+  required: boolean;
+  icon?: string | null;
+  allowVideo: boolean;
+  submissions?: MediaSubmission[];
+  completed?: boolean;
+  photoCount?: number;
+  videoCount?: number;
 }
 
-interface AdminContract {
-  id: string; contractNumber: string; customerName: string
-  customerEmail: string | null; customerPhone: string | null
-  vehiclePlate: string; vehicleModel: string; vehicleColor: string | null
-  status: string; createdAt: string; updatedAt: string
-  tokens: Array<{ id: string; token: string; expiresAt: string; usedAt: string | null; isExpired: boolean }>
-  photosSubmitted: number
+interface MediaSubmission {
+  id: string;
+  contractId: string;
+  requirementId: string;
+  mediaType: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  duration?: number | null;
+  localPath?: string | null;
+  graphItemId?: string | null;
+  graphDriveId?: string | null;
+  uploadedAt: string;
+  requirement?: PhotoRequirement;
 }
 
-const iconMap: Record<string, React.ElementType> = {
-  CarFront, Car, ArrowLeft, ArrowRight, Gauge, Fuel, AlertTriangle,
-}
+type AppMode = 'admin' | 'customer' | 'completed';
 
-type View = 'dashboard' | 'photo_checklist' | 'confirmation'
+const ICON_MAP: Record<string, React.ReactNode> = {
+  CarFront: <CarFront className="w-5 h-5" />,
+  ArrowRight: <ArrowRight className="w-5 h-5" />,
+  ArrowLeft: <ArrowLeft className="w-5 h-5" />,
+  Car: <Car className="w-5 h-5" />,
+  Armchair: <Armchair className="w-5 h-5" />,
+};
 
-export default function Home() {
-  const [locale, setLocale] = useState<Locale>('en')
-  const [view, setView] = useState<View>('dashboard')
-  const [token, setToken] = useState('')
-  const [contractInfo, setContractInfo] = useState<ContractInfo | null>(null)
-  const [checklist, setChecklist] = useState<PhotoChecklistItem[]>([])
-  const [uploadingKey, setUploadingKey] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [validating, setValidating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
-  const [adminContracts, setAdminContracts] = useState<AdminContract[]>([])
-  const [adminLoading, setAdminLoading] = useState(false)
-  const [showNewContractDialog, setShowNewContractDialog] = useState(false)
-  const [showTokenDialog, setShowTokenDialog] = useState(false)
-  const [selectedContractId, setSelectedContractId] = useState<string | null>(null)
-  const [newTokenLink, setNewTokenLink] = useState<string | null>(null)
-  const [copiedToken, setCopiedToken] = useState<string | null>(null)
-  const [bulkUploading, setBulkUploading] = useState(false)
-  const [bulkResult, setBulkResult] = useState<BulkUploadResult | null>(null)
-  const [dragOver, setDragOver] = useState(false)
-  const [expandedContract, setExpandedContract] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
+export default function HomePage() {
+  // Core state
+  const [mode, setMode] = useState<AppMode>('admin');
+  const [locale, setLocale] = useState<Locale>('en');
+  const [tokenValue, setTokenValue] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  // Admin state
+  const [contracts, setContracts] = useState<RentalContract[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showNewContract, setShowNewContract] = useState(false);
+  const [showEditContract, setShowEditContract] = useState(false);
+  const [editingContract, setEditingContract] = useState<RentalContract | null>(null);
   const [newContract, setNewContract] = useState({
-    contractNumber: '', customerName: '', customerEmail: '',
-    customerPhone: '', vehiclePlate: '', vehicleModel: '', vehicleColor: '',
-  })
+    contractNumber: '', customerName: '', customerEmail: '', customerPhone: '',
+    vehiclePlate: '', vehicleModel: '', vehicleColor: ''
+  });
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
 
-  // Load locale + check for token in URL hash
-  useEffect(() => {
-    const saved = localStorage.getItem('hertz-locale') as Locale | null
-    if (saved && LOCALES.some(l => l.code === saved)) setLocale(saved)
-    const hash = window.location.hash
-    if (hash && hash.startsWith('#token=')) {
-      const urlToken = hash.replace('#token=', '')
-      setToken(urlToken)
-      doValidateToken(urlToken, saved || 'en')
-    }
-  }, [])
+  // Customer state
+  const [contract, setContract] = useState<RentalContract | null>(null);
+  const [accessToken, setAccessToken] = useState<AccessToken | null>(null);
+  const [checklist, setChecklist] = useState<PhotoRequirement[]>([]);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenErrorCode, setTokenErrorCode] = useState<string | null>(null);
+  const [uploadingItem, setUploadingItem] = useState<string | null>(null);
+  const [mediaModes, setMediaModes] = useState<Record<string, 'photo' | 'video'>>({});
+  const [showLanguageSelect, setShowLanguageSelect] = useState(true);
+  const [selectedRequirement, setSelectedRequirement] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  // Detect mode from URL hash
   useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash
-      if (hash && hash.startsWith('#token=')) {
-        const urlToken = hash.replace('#token=', '')
-        setToken(urlToken)
-        doValidateToken(urlToken)
+    const checkHash = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#token=')) {
+        const tk = hash.replace('#token=', '');
+        setTokenValue(tk);
+        setMode('customer');
+        setShowLanguageSelect(true);
+      } else {
+        setMode('admin');
       }
-    }
-    window.addEventListener('hashchange', handleHash)
-    return () => window.removeEventListener('hashchange', handleHash)
-  }, [])
+      setLoading(false);
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
 
-  useEffect(() => { if (error) { const tm = setTimeout(() => setError(null), 8000); return () => clearTimeout(tm) } }, [error])
-  useEffect(() => { if (successMsg) { const tm = setTimeout(() => setSuccessMsg(null), 4000); return () => clearTimeout(tm) } }, [successMsg])
-
-  const changeLocale = useCallback((l: Locale) => {
-    setLocale(l)
-    localStorage.setItem('hertz-locale', l)
-    document.documentElement.lang = l
-  }, [])
-
-  const loadAdminContracts = useCallback(async () => {
-    setAdminLoading(true)
+  const loadContracts = async () => {
     try {
-      await fetch('/api/admin/seed', { method: 'POST' })
-      const res = await fetch('/api/admin/contracts')
-      const data = await res.json()
-      if (res.ok) setAdminContracts(data.contracts)
-    } catch { } finally { setAdminLoading(false) }
-  }, [])
+      const res = await fetch('/api/admin/contracts');
+      if (res.ok) {
+        const data = await res.json();
+        setContracts(data.contracts || []);
+      }
+    } catch (err) {
+      toast.error('Failed to load contracts');
+    }
+  };
 
-  const doValidateToken = useCallback(async (tk: string, loc?: Locale) => {
-    setValidating(true); setError(null)
+  const validateToken = async () => {
     try {
       const res = await fetch('/api/token/validate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tk.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Invalid token'); return }
-      setContractInfo(data.contract)
-      setChecklist(data.photoChecklist)
-      setView('photo_checklist')
-    } catch { setError(t(loc || locale, 'landing.connectionError')) }
-    finally { setValidating(false) }
-  }, [locale])
-
-  const handlePhotoCapture = useCallback(async (requirement: PhotoChecklistItem) => {
-    const input = document.createElement('input')
-    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment'
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      setUploadingKey(requirement.key); setError(null)
-      const formData = new FormData()
-      formData.append('photo', file); formData.append('token', token); formData.append('requirementId', requirement.id)
-      try {
-        const res = await fetch('/api/photos/upload', { method: 'POST', body: formData })
-        const data = await res.json()
-        if (!res.ok) { setError(data.error); return }
-        setChecklist(prev => prev.map(item => item.key === requirement.key ? { ...item, completed: true } : item))
-        setSuccessMsg(t(locale, 'checklist.photoSuccess'))
-      } catch { setError(t(locale, 'landing.connectionError')) }
-      finally { setUploadingKey(null) }
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTokenError(data.error);
+        setTokenErrorCode(data.code);
+        if (data.contract) setContract(data.contract);
+        return;
+      }
+      setContract(data.contract);
+      setAccessToken(data.token);
+      setChecklist(data.checklist || []);
+      setTokenError(null);
+      setTokenErrorCode(null);
+      // Init media modes
+      const modes: Record<string, 'photo' | 'video'> = {};
+      (data.checklist || []).forEach((r: PhotoRequirement) => { modes[r.id] = 'photo'; });
+      setMediaModes(modes);
+    } catch (err) {
+      setTokenError(t('landing.connectionError', locale));
+      setTokenErrorCode('connection');
     }
-    input.click()
-  }, [token, locale])
+  };
 
-  const handleSubmit = useCallback(async () => {
-    setSubmitting(true); setError(null)
+  // Load admin data
+  useEffect(() => {
+    if (mode === 'admin') {
+      fetch('/api/admin/contracts')
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { if (data) setContracts(data.contracts || []); })
+        .catch(() => { toast.error('Failed to load contracts'); });
+    }
+  }, [mode]);
+
+  // Validate customer token
+  useEffect(() => {
+    if (mode === 'customer' && tokenValue) {
+      (async () => {
+        try {
+          const res = await fetch('/api/token/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: tokenValue }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setTokenError(data.error);
+            setTokenErrorCode(data.code);
+            if (data.contract) setContract(data.contract);
+            return;
+          }
+          setContract(data.contract);
+          setAccessToken(data.token);
+          setChecklist(data.checklist || []);
+          setTokenError(null);
+          setTokenErrorCode(null);
+          const modes: Record<string, 'photo' | 'video'> = {};
+          (data.checklist || []).forEach((r: PhotoRequirement) => { modes[r.id] = 'photo'; });
+          setMediaModes(modes);
+        } catch {
+          setTokenError(t('landing.connectionError', locale));
+          setTokenErrorCode('connection');
+        }
+      })();
+    }
+  }, [mode, tokenValue]);
+
+  const loadChecklist = async () => {
+    if (!tokenValue) return;
     try {
-      const res = await fetch('/api/submit', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.missingPhotos ? `${t(locale, 'checklist.missingPhotos')}: ${data.missingPhotos.map((p: { label: string }) => p.label).join(', ')}` : data.error); return }
-      setView('confirmation')
-    } catch { setError(t(locale, 'landing.connectionError')) }
-    finally { setSubmitting(false) }
-  }, [token, locale])
+      const res = await fetch('/api/token/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenValue }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setChecklist(data.checklist || []);
+        setContract(data.contract);
+      }
+    } catch (err) { /* ignore */ }
+  };
 
-  const handleCreateContract = useCallback(async () => {
+  // Admin CRUD operations
+  const createContract = async () => {
     try {
       const res = await fetch('/api/admin/contracts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newContract),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error); return }
-      setNewTokenLink(data.accessToken?.link || null)
-      setNewContract({ contractNumber: '', customerName: '', customerEmail: '', customerPhone: '', vehiclePlate: '', vehicleModel: '', vehicleColor: '' })
-      setShowNewContractDialog(false)
-      loadAdminContracts()
-    } catch { setError(t(locale, 'landing.connectionError')) }
-  }, [newContract, loadAdminContracts, locale])
+      });
+      if (res.ok) {
+        toast.success('Contract created successfully');
+        setShowNewContract(false);
+        setNewContract({ contractNumber: '', customerName: '', customerEmail: '', customerPhone: '', vehiclePlate: '', vehicleModel: '', vehicleColor: '' });
+        loadContracts();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to create contract');
+      }
+    } catch (err) {
+      toast.error('Failed to create contract');
+    }
+  };
 
-  const handleGenerateToken = useCallback(async (contractId: string) => {
+  const updateContract = async () => {
+    if (!editingContract) return;
+    try {
+      const res = await fetch('/api/admin/contracts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingContract),
+      });
+      if (res.ok) {
+        toast.success('Contract updated');
+        setShowEditContract(false);
+        setEditingContract(null);
+        loadContracts();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to update');
+      }
+    } catch (err) {
+      toast.error('Failed to update contract');
+    }
+  };
+
+  const deleteContract = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/contracts?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Contract deleted');
+        loadContracts();
+      } else {
+        toast.error('Failed to delete contract');
+      }
+    } catch (err) {
+      toast.error('Failed to delete contract');
+    }
+  };
+
+  const generateToken = async (contractId: string) => {
     try {
       const res = await fetch('/api/admin/tokens', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contractId }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error); return }
-      setNewTokenLink(data.accessToken?.link || null)
-      setShowTokenDialog(false)
-      loadAdminContracts()
-    } catch { setError(t(locale, 'landing.connectionError')) }
-  }, [loadAdminContracts, locale])
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success('Token generated');
+        loadContracts();
+        return data.token;
+      } else {
+        toast.error('Failed to generate token');
+      }
+    } catch (err) {
+      toast.error('Failed to generate token');
+    }
+    return null;
+  };
 
-  const handleBulkUpload = useCallback(async (file: File) => {
-    setBulkUploading(true); setBulkResult(null); setError(null)
-    const formData = new FormData(); formData.append('file', file)
+  const copyTokenLink = (token: string) => {
+    const link = `${window.location.origin}${window.location.pathname}#token=${token}`;
+    navigator.clipboard.writeText(link);
+    toast.success(t('admin.copied', locale));
+  };
+
+  const seedRequirements = async () => {
     try {
-      const res = await fetch('/api/admin/bulk-upload', { method: 'POST', body: formData })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error); return }
-      setBulkResult(data)
-      loadAdminContracts()
-    } catch { setError(t(locale, 'landing.connectionError')) }
-    finally { setBulkUploading(false) }
-  }, [loadAdminContracts, locale])
+      const res = await fetch('/api/admin/seed', { method: 'POST' });
+      if (res.ok) {
+        toast.success('Photo requirements seeded');
+      } else {
+        toast.error('Failed to seed requirements');
+      }
+    } catch (err) {
+      toast.error('Failed to seed requirements');
+    }
+  };
 
-  const downloadTemplate = useCallback(() => {
-    const csv = 'Rental,Customer,Vehicle,Model,Email,Phone,Fuel,Days\nRES-001,John Smith,ABC 123,Toyota Yaris,john@email.com,+356 9999 0001,8,7\nRES-002,Jane Doe,XYZ 789,Fiat 500,jane@email.com,+356 9999 0002,8,4'
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'hertz_checkin_template.csv'; a.click()
-    URL.revokeObjectURL(url)
-  }, [])
+  const bulkUpload = async (file: File) => {
+    setBulkUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/admin/bulk-upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Created ${data.created} contracts`);
+        if (data.errors?.length) toast.warning(`${data.errors.length} rows skipped`);
+        setShowBulkUpload(false);
+        loadContracts();
+      } else {
+        toast.error(data.error || 'Bulk upload failed');
+      }
+    } catch (err) {
+      toast.error('Bulk upload failed');
+    }
+    setBulkUploading(false);
+  };
 
-  const copyToClipboard = useCallback((text: string, id: string) => {
-    const fullUrl = text.startsWith('http') ? text : `${window.location.origin}${text}`
-    navigator.clipboard.writeText(fullUrl)
-    setCopiedToken(id)
-    setTimeout(() => setCopiedToken(null), 2000)
-  }, [])
+  // Customer upload
+  const uploadMedia = async (requirementId: string, file: File, mediaType: 'photo' | 'video', duration?: number) => {
+    setUploadingItem(requirementId);
+    try {
+      const formData = new FormData();
+      formData.append('token', tokenValue);
+      formData.append('media', file);
+      formData.append('requirementId', requirementId);
+      formData.append('mediaType', mediaType);
+      if (duration) formData.append('duration', String(duration));
 
-  const completedCount = checklist.filter(c => c.completed).length
-  const totalCount = checklist.length
-  const allRequiredCompleted = checklist.filter(r => r.required).every(r => r.completed)
-  const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0
+      const res = await fetch('/api/photos/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(t('checklist.uploadSuccess', locale));
+        loadChecklist();
+      } else {
+        toast.error(data.error || t('checklist.uploadError', locale));
+      }
+    } catch (err) {
+      toast.error(t('checklist.uploadError', locale));
+    }
+    setUploadingItem(null);
+  };
 
-  const filteredContracts = adminContracts.filter(c => {
-    if (!searchQuery) return true
-    const q = searchQuery.toLowerCase()
-    return c.contractNumber.toLowerCase().includes(q)
-      || c.customerName.toLowerCase().includes(q)
-      || c.vehiclePlate.toLowerCase().includes(q)
-      || c.vehicleModel.toLowerCase().includes(q)
-  })
+  const handleSubmit = async () => {
+    try {
+      const res = await fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenValue }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMode('completed');
+        setContract(data.contract);
+      } else {
+        if (data.code === 'incomplete') {
+          toast.error(data.error);
+        } else {
+          toast.error(data.error || 'Failed to submit');
+        }
+      }
+    } catch (err) {
+      toast.error('Failed to submit');
+    }
+  };
 
-  const pendingCount = adminContracts.filter(c => c.status === 'pending').length
-  const inProgressCount = adminContracts.filter(c => c.status === 'in_progress').length
-  const completedCount2 = adminContracts.filter(c => c.status === 'completed').length
+  // Filter contracts
+  const filteredContracts = contracts.filter(c => {
+    const matchesSearch = !searchTerm ||
+      c.contractNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.vehiclePlate.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
-  // ==================== PHOTO CHECKLIST (Customer View) ====================
-  if (view === 'photo_checklist' && contractInfo) {
+  const stats = {
+    total: contracts.length,
+    pending: contracts.filter(c => c.status === 'pending').length,
+    inProgress: contracts.filter(c => c.status === 'in_progress').length,
+    completed: contracts.filter(c => c.status === 'completed').length,
+  };
+
+  const allRequiredCompleted = checklist
+    .filter(r => r.required)
+    .every(r => (r.submissions?.length || 0) > 0);
+
+  const isRTL = RTL_LOCALES.includes(locale);
+
+  // Get requirement icon
+  const getReqIcon = (iconName?: string | null) => {
+    if (!iconName) return <Camera className="w-5 h-5" />;
+    return ICON_MAP[iconName] || <Camera className="w-5 h-5" />;
+  };
+
+  // Get requirement label
+  const getReqLabel = (req: PhotoRequirement) => {
+    if (locale === 'en') return req.labelEn || req.label;
+    return getPhotoLabel(req.key, locale);
+  };
+
+  // Get total media for a requirement
+  const getTotalMedia = (req: PhotoRequirement) => {
+    return (req.submissions?.length || 0);
+  };
+
+  // ==================== RENDER ====================
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex flex-col bg-gray-50">
-        <header className="w-full bg-[#FFD100] shadow-md sticky top-0 z-10">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-                  <CarFront className="w-5 h-5 text-[#FFD100]" />
-                </div>
-                <span className="font-bold text-black text-sm">Hertz Malta</span>
-              </div>
-              <Select value={locale} onValueChange={v => changeLocale(v as Locale)}>
-                <SelectTrigger className="w-[110px] h-7 text-xs border-black/20 text-black/70 bg-white/80">
-                  <Globe className="w-3 h-3 mr-1" /><SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-48">
-                  {LOCALES.map(l => <SelectItem key={l.code} value={l.code} className="text-xs">{l.nativeName}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-between text-xs text-black/70 mb-1">
-              <span>{completedCount}/{totalCount} {t(locale, 'checklist.photosCompleted')}</span>
-              <span>{Math.round(progressPercent)}%</span>
-            </div>
-            <Progress value={progressPercent} className="h-2 bg-black/10 [&>div]:bg-black" />
+      <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#FFCC00]" />
+      </div>
+    );
+  }
+
+  // ==================== COMPLETED SCREEN ====================
+  if (mode === 'completed') {
+    return (
+      <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] flex flex-col items-center justify-center p-6 ${isRTL ? 'rtl' : ''}`}>
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', duration: 0.5 }}>
+          <div className="w-20 h-20 rounded-full bg-[#FFCC00] flex items-center justify-center mb-6">
+            <CheckCircle2 className="w-10 h-10 text-[#1a1a1a]" />
           </div>
-        </header>
-        <main className="flex-1 max-w-3xl mx-auto w-full p-4 sm:p-6 space-y-3 pb-24">
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                <div><span className="text-muted-foreground text-xs">{t(locale, 'checklist.customer')}</span><p className="font-semibold">{contractInfo.customerName}</p></div>
-                <div><span className="text-muted-foreground text-xs">{t(locale, 'checklist.vehicle')}</span><p className="font-semibold">{contractInfo.vehicleModel}</p></div>
-                <div><span className="text-muted-foreground text-xs">{t(locale, 'checklist.plate')}</span><p className="font-semibold font-mono">{contractInfo.vehiclePlate}</p></div>
-                {contractInfo.vehicleColor && <div><span className="text-muted-foreground text-xs">{t(locale, 'checklist.color')}</span><p className="font-semibold">{contractInfo.vehicleColor}</p></div>}
-              </div>
-            </CardContent>
-          </Card>
-          {error && <Alert variant="destructive"><XCircle className="w-4 h-4" /><AlertDescription>{error}</AlertDescription></Alert>}
-          {successMsg && <Alert className="border-green-200 bg-green-50 text-green-800"><CheckCircle2 className="w-4 h-4" /><AlertDescription>{successMsg}</AlertDescription></Alert>}
-          <h2 className="font-semibold flex items-center gap-2 text-base"><Camera className="w-4 h-4" />{t(locale, 'checklist.requiredPhotos')}</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {checklist.map(item => {
-              const IconComp = iconMap[item.icon] || Camera
-              const isUploading = uploadingKey === item.key
-              return (
-                <Card key={item.id} className={`border-0 shadow-sm ${item.completed ? 'bg-green-50 ring-1 ring-green-200' : 'bg-white ring-1 ring-black/5'}`}>
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${item.completed ? 'bg-green-200 text-green-700' : 'bg-[#FFD100]/20 text-black'}`}>
-                        {item.completed ? <CheckCircle2 className="w-5 h-5" /> : <IconComp className="w-5 h-5" />}
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <h1 className="text-3xl font-bold text-[#FFCC00] mb-2">{t('completed.title', locale)}</h1>
+          <p className="text-gray-300 text-center mb-4">{t('completed.subtitle', locale)}</p>
+          {contract && (
+            <Card className="hertz-card max-w-md w-full mb-6">
+              <CardContent className="p-6 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">{t('completed.contractNumber', locale)}</span>
+                  <span className="text-[#FFCC00] font-semibold">{contract.contractNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">{t('admin.customerName', locale)}</span>
+                  <span className="text-white">{contract.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">{t('admin.vehiclePlate', locale)}</span>
+                  <span className="text-white">{contract.vehiclePlate}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">{t('admin.vehicleModel', locale)}</span>
+                  <span className="text-white">{contract.vehicleModel}</span>
+                </div>
+                {contract.vehicleColor && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">{t('admin.vehicleColor', locale)}</span>
+                    <span className="text-white">{contract.vehicleColor}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          <p className="text-gray-300 text-center">{t('completed.thankYou', locale)}</p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ==================== CUSTOMER CHECK-IN ====================
+  if (mode === 'customer') {
+    // Language selection screen
+    if (showLanguageSelect && !tokenError) {
+      return (
+        <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] flex flex-col items-center justify-center p-6 ${isRTL ? 'rtl' : ''}`}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="w-16 h-16 rounded-full bg-[#FFCC00] flex items-center justify-center mb-4">
+              <Globe className="w-8 h-8 text-[#1a1a1a]" />
+            </div>
+            <h1 className="text-2xl font-bold text-[#FFCC00] mb-2 text-center">{t('landing.title', locale)}</h1>
+            <p className="text-gray-300 text-center mb-6">{t('landing.selectLanguage', locale)}</p>
+
+            <div className="max-w-md w-full grid grid-cols-2 gap-2 mb-6">
+              {Object.entries(LOCALES).map(([code, name]) => (
+                <Button
+                  key={code}
+                  variant={locale === code ? 'default' : 'outline'}
+                  className={locale === code
+                    ? 'hertz-btn-gold text-sm'
+                    : 'border-gray-600 text-gray-300 hover:border-[#FFCC00] hover:text-[#FFCC00] text-sm'
+                  }
+                  onClick={() => setLocale(code as Locale)}
+                >
+                  {name}
+                </Button>
+              ))}
+            </div>
+
+            <Button
+              className="hertz-btn-gold w-full max-w-md text-lg py-3"
+              onClick={() => setShowLanguageSelect(false)}
+            >
+              {t('landing.startCheckin', locale)}
+              <ChevronRight className="w-5 h-5 ml-2" />
+            </Button>
+          </motion.div>
+        </div>
+      );
+    }
+
+    // Error screens
+    if (tokenError) {
+      return (
+        <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] flex flex-col items-center justify-center p-6 ${isRTL ? 'rtl' : ''}`}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+              {tokenErrorCode === 'expired' ? <Clock className="w-8 h-8 text-red-400" /> :
+               tokenErrorCode === 'used' ? <CheckCircle2 className="w-8 h-8 text-green-400" /> :
+               <AlertCircle className="w-8 h-8 text-red-400" />}
+            </div>
+            <h1 className="text-2xl font-bold mb-2 text-center">
+              {tokenErrorCode === 'expired' ? t('landing.expired', locale) :
+               tokenErrorCode === 'used' ? t('landing.used', locale) :
+               t('landing.connectionError', locale)}
+            </h1>
+            {contract && (
+              <Card className="hertz-card max-w-md w-full mt-4">
+                <CardContent className="p-4">
+                  <p className="text-gray-400">{t('admin.contractNumber', locale)}: <span className="text-[#FFCC00]">{contract.contractNumber}</span></p>
+                  <p className="text-gray-400">{t('admin.customerName', locale)}: <span className="text-white">{contract.customerName}</span></p>
+                </CardContent>
+              </Card>
+            )}
+            <Button variant="outline" className="mt-6 border-gray-600 text-gray-300" onClick={() => { setMode('admin'); window.location.hash = ''; }}>
+              {t('common.back', locale)}
+            </Button>
+          </motion.div>
+        </div>
+      );
+    }
+
+    // Main checklist view
+    return (
+      <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] ${isRTL ? 'rtl' : ''}`}>
+        {/* Header */}
+        <div className="bg-[#FFCC00] px-4 py-3">
+          <div className="max-w-lg mx-auto flex items-center justify-between">
+            <div>
+              <h1 className="text-[#1a1a1a] font-bold text-lg">{t('app.title', locale)}</h1>
+              <p className="text-[#1a1a1a]/70 text-sm">{t('app.subtitle', locale)}</p>
+            </div>
+            <Button variant="ghost" size="sm" className="text-[#1a1a1a]" onClick={() => setShowLanguageSelect(true)}>
+              <Globe className="w-4 h-4 mr-1" />
+              {LOCALES[locale]}
+            </Button>
+          </div>
+        </div>
+
+        {/* Vehicle Info */}
+        {contract && (
+          <div className="max-w-lg mx-auto px-4 mt-4">
+            <Card className="hertz-card">
+              <CardContent className="p-4">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-gray-400 text-xs">{t('admin.contractNumber', locale)}</span>
+                    <p className="text-[#FFCC00] font-semibold">{contract.contractNumber}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-xs">{t('admin.customerName', locale)}</span>
+                    <p className="text-white">{contract.customerName}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-xs">{t('admin.vehiclePlate', locale)}</span>
+                    <p className="text-white">{contract.vehiclePlate}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-xs">{t('admin.vehicleModel', locale)}</span>
+                    <p className="text-white">{contract.vehicleModel}</p>
+                  </div>
+                  {contract.vehicleColor && (
+                    <div className="col-span-2">
+                      <span className="text-gray-400 text-xs">{t('admin.vehicleColor', locale)}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full border border-gray-400" style={{ backgroundColor: contract.vehicleColor.toLowerCase() }} />
+                        <p className="text-white">{contract.vehicleColor}</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className="font-semibold text-sm">{t(locale, `photo.${item.key}` as never)}</span>
-                          {item.required && !item.completed && <Badge className="text-[9px] px-1 py-0 bg-amber-100 text-amber-800">{t(locale, 'checklist.mandatory')}</Badge>}
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">{t(locale, `photo.${item.key}.desc` as never)}</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Car Diagram */}
+        {contract && (
+          <div className="max-w-lg mx-auto px-4 mt-4">
+            <Card className="hertz-card">
+              <CardContent className="p-4">
+                <p className="text-gray-300 text-sm mb-3 text-center">{t('checklist.title', locale)}</p>
+                <CarDiagram
+                  checklist={checklist}
+                  locale={locale}
+                  onSelect={(key) => {
+                    const req = checklist.find(r => r.key === key);
+                    if (req) setSelectedRequirement(req.id);
+                  }}
+                  getReqLabel={getReqLabel}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Checklist Items */}
+        <div className="max-w-lg mx-auto px-4 mt-4 space-y-3 pb-20">
+          <AnimatePresence>
+            {checklist.map((req) => (
+              <motion.div
+                key={req.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ delay: req.orderIndex * 0.05 }}
+              >
+                <Card className={`hertz-card ${selectedRequirement === req.id ? 'ring-2 ring-[#FFCC00]' : ''}`}
+                  onClick={() => setSelectedRequirement(req.id)}>
+                  <CardContent className="p-4">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        {getReqIcon(req.icon)}
+                        <span className="text-white font-medium">{getReqLabel(req)}</span>
+                        {req.required ? (
+                          <Badge variant="outline" className="border-[#FFCC00]/50 text-[#FFCC00] text-xs">{t('checklist.required', locale)}</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-gray-500 text-gray-400 text-xs">{t('checklist.optional', locale)}</Badge>
+                        )}
                       </div>
-                      <Button size="sm" variant={item.completed ? 'outline' : 'default'} className={`shrink-0 h-8 text-xs ${item.completed ? 'border-green-300 text-green-700' : 'bg-[#FFD100] hover:bg-[#E6BC00] text-black'}`} onClick={() => handlePhotoCapture(item)} disabled={isUploading}>
-                        {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : item.completed ? <RefreshCw className="w-3 h-3" /> : <Camera className="w-3 h-3" />}
-                      </Button>
+                      {(req.submissions?.length || 0) > 0 && (
+                        <CheckCircle2 className="w-5 h-5 text-green-400" />
+                      )}
+                    </div>
+
+                    {/* Description */}
+                    {req.description && (
+                      <p className="text-gray-400 text-xs mb-3">{locale === 'en' ? (req.description || '') : req.description}</p>
+                    )}
+
+                    {/* Photo/Video Mode Toggle */}
+                    {req.allowVideo && (req.submissions?.length || 0) < 10 && (
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-gray-400 text-xs">{t('video.photoMode', locale)}</span>
+                        <Switch
+                          checked={mediaModes[req.id] === 'video'}
+                          onCheckedChange={(checked) =>
+                            setMediaModes(prev => ({ ...prev, [req.id]: checked ? 'video' : 'photo' }))
+                          }
+                          className="data-[state=checked]:bg-[#FFCC00]"
+                        />
+                        <span className="text-gray-400 text-xs">{t('video.videoMode', locale)}</span>
+                      </div>
+                    )}
+
+                    {/* Upload Buttons */}
+                    {(req.submissions?.length || 0) < 10 && (
+                      <div className="flex gap-2 mb-3">
+                        {mediaModes[req.id] === 'video' ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-[#FFCC00]/30 text-[#FFCC00] hover:bg-[#FFCC00]/10"
+                              disabled={uploadingItem === req.id}
+                              onClick={() => {
+                                const input = fileInputRefs.current[req.id + '_video'];
+                                if (input) {
+                                  input.setAttribute('accept', 'video/mp4,video/webm,video/quicktime,video/avi');
+                                  input.click();
+                                }
+                              }}
+                            >
+                              {uploadingItem === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
+                              <span className="ml-1">{t('video.record', locale)}</span>
+                            </Button>
+                            <span className="text-gray-400 text-xs flex items-center">
+                              <Info className="w-3 h-3 mr-1" />
+                              {t('video.maxDuration', locale)}
+                            </span>
+                            <input
+                              ref={(el) => { fileInputRefs.current[req.id + '_video'] = el; }}
+                              type="file"
+                              accept="video/mp4,video/webm,video/quicktime,video/avi"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) uploadMedia(req.id, file, 'video');
+                                e.target.value = '';
+                              }}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-[#FFCC00]/30 text-[#FFCC00] hover:bg-[#FFCC00]/10"
+                              disabled={uploadingItem === req.id}
+                              onClick={() => {
+                                const input = fileInputRefs.current[req.id + '_photo'];
+                                if (input) {
+                                  input.setAttribute('accept', 'image/jpeg,image/png,image/webp,image/heic');
+                                  input.click();
+                                }
+                              }}
+                            >
+                              {uploadingItem === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                              <span className="ml-1">{t('video.takePhoto', locale)}</span>
+                            </Button>
+                            <input
+                              ref={(el) => { fileInputRefs.current[req.id + '_photo'] = el; }}
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/heic"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) uploadMedia(req.id, file, 'photo');
+                                e.target.value = '';
+                              }}
+                            />
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Existing submissions preview */}
+                    {req.submissions && req.submissions.length > 0 && (
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {req.submissions.map((sub) => (
+                          <div key={sub.id} className="relative flex-shrink-0">
+                            {sub.mediaType === 'video' ? (
+                              <div className="w-20 h-20 rounded-lg bg-gray-800 border border-[#FFCC00]/30 flex items-center justify-center video-thumbnail">
+                                <Video className="w-6 h-6 text-[#FFCC00]" />
+                                <Play className="w-4 h-4 text-white absolute z-10" />
+                                {sub.duration && (
+                                  <Badge className="absolute bottom-1 right-1 bg-[#1a1a1a] text-[#FFCC00] text-xs z-10">
+                                    {sub.duration}{t('video.seconds', locale)}
+                                  </Badge>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="w-20 h-20 rounded-lg bg-gray-800 border border-[#FFCC00]/30 flex items-center justify-center">
+                                <Camera className="w-6 h-6 text-[#FFCC00]" />
+                              </div>
+                            )}
+                            <Badge className="absolute top-1 left-1 bg-[#1a1a1a] text-xs z-10">
+                              {sub.mediaType === 'video' ? 'V' : 'P'}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Count summary */}
+                    <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                      <span>{(req.photoCount || 0)} photos, {(req.videoCount || 0)} videos</span>
+                      <span>({getTotalMedia(req)}/10 max)</span>
                     </div>
                   </CardContent>
                 </Card>
-              )
-            })}
-          </div>
-        </main>
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-sm border-t z-10">
-          <div className="max-w-3xl mx-auto">
-            <Button className="w-full h-12 text-base font-bold shadow-xl rounded-xl bg-black hover:bg-black/90 text-[#FFD100] disabled:opacity-50" disabled={!allRequiredCompleted || submitting} onClick={handleSubmit}>
-              {submitting ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />{t(locale, 'checklist.submitting')}</> : !allRequiredCompleted ? <><ImageIcon className="w-5 h-5 mr-2" />{completedCount}/{totalCount}</> : <><Upload className="w-5 h-5 mr-2" />{t(locale, 'checklist.submitCheckin')}</>}
-            </Button>
-          </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
-      </div>
-    )
-  }
 
-  // ==================== CONFIRMATION (Customer View) ====================
-  if (view === 'confirmation' && contractInfo) {
-    return (
-      <div className="min-h-screen flex flex-col bg-gray-50">
-        <header className="w-full bg-green-600 text-white shadow-md">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-3">
-            <CheckCheck className="w-8 h-8" />
-            <div>
-              <h1 className="text-lg font-bold">{t(locale, 'confirm.title')}</h1>
-              <p className="text-green-100 text-xs">{t(locale, 'confirm.subtitle')}</p>
-            </div>
-          </div>
-        </header>
-        <main className="flex-1 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md shadow-xl border-0">
-            <CardContent className="p-6 text-center space-y-4">
-              <div className="w-20 h-20 mx-auto bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle2 className="w-12 h-12 text-green-600" />
-              </div>
-              <h2 className="text-xl font-bold text-green-800">{t(locale, 'confirm.thanks')}</h2>
-              <p className="text-sm text-muted-foreground">{t(locale, 'confirm.message')}</p>
-              <div className="bg-green-50 rounded-lg p-3 text-left text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-muted-foreground text-xs">{t(locale, 'confirm.contract')}</span><span className="font-mono font-semibold">{contractInfo.contractNumber}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground text-xs">{t(locale, 'checklist.customer')}</span><span className="font-semibold">{contractInfo.customerName}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground text-xs">{t(locale, 'checklist.plate')}</span><span className="font-mono font-semibold">{contractInfo.vehiclePlate}</span></div>
-              </div>
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-800">{t(locale, 'confirm.savedSecure')}</div>
-              <Button variant="outline" onClick={() => { setView('dashboard'); setToken(''); setContractInfo(null); setChecklist([]); setError(null); window.location.hash = '' }}>{t(locale, 'confirm.backHome')}</Button>
-            </CardContent>
-          </Card>
-        </main>
-      </div>
-    )
-  }
-
-  // ==================== ADMIN DASHBOARD (Main View — Desktop-first) ====================
-  return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* ── Header ── */}
-      <header className="w-full bg-[#FFD100] shadow-md sticky top-0 z-20">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
-                <CarFront className="w-6 h-6 text-[#FFD100]" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-black leading-tight">Hertz Malta</h1>
-                <p className="text-xs text-black/60 font-medium">{t(locale, 'admin.title')}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Quick Token Access — desktop only */}
-              <div className="hidden md:flex items-center gap-2">
-                <Input
-                  placeholder="Enter token code..."
-                  value={token}
-                  onChange={e => setToken(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && doValidateToken(token)}
-                  className="w-48 h-8 text-xs font-mono bg-white/80 border-black/10"
-                />
-                <Button onClick={() => doValidateToken(token)} disabled={validating || !token.trim()} className="h-8 bg-black hover:bg-black/90 text-[#FFD100] px-3" size="sm">
-                  {validating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightToLine className="w-3.5 h-3.5" />}
-                </Button>
-              </div>
-              <Select value={locale} onValueChange={v => changeLocale(v as Locale)}>
-                <SelectTrigger className="w-[110px] h-8 text-xs border-black/15 text-black/70 bg-white/80">
-                  <Globe className="w-3.5 h-3.5 mr-1" /><SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-48">
-                  {LOCALES.map(l => <SelectItem key={l.code} value={l.code} className="text-xs">{l.nativeName}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-[1400px] mx-auto w-full p-4 sm:p-6">
-        {error && <Alert variant="destructive" className="mb-4"><XCircle className="w-4 h-4" /><AlertDescription>{error}</AlertDescription></Alert>}
-        {successMsg && <Alert className="border-green-200 bg-green-50 text-green-800 mb-4"><CheckCircle2 className="w-4 h-4" /><AlertDescription>{successMsg}</AlertDescription></Alert>}
-
-        {/* ── Desktop: Two-column layout | Mobile: Stacked ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
-          {/* ========== LEFT SIDEBAR ========== */}
-          <div className="space-y-4 order-2 lg:order-1">
-            {/* ── Stats ── */}
-            <div className="grid grid-cols-2 gap-2">
-              <Card className="border-0 shadow-sm bg-white">
-                <CardContent className="p-3 text-center">
-                  <p className="text-3xl font-bold text-gray-900">{adminContracts.length}</p>
-                  <p className="text-[11px] text-muted-foreground font-medium">Total</p>
-                </CardContent>
-              </Card>
-              <Card className="border-0 shadow-sm bg-white">
-                <CardContent className="p-3 text-center">
-                  <p className="text-3xl font-bold text-amber-600">{pendingCount}</p>
-                  <p className="text-[11px] text-muted-foreground font-medium">{t(locale, 'admin.pending')}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-0 shadow-sm bg-white">
-                <CardContent className="p-3 text-center">
-                  <p className="text-3xl font-bold text-blue-600">{inProgressCount}</p>
-                  <p className="text-[11px] text-muted-foreground font-medium">{t(locale, 'admin.inProgress')}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-0 shadow-sm bg-white">
-                <CardContent className="p-3 text-center">
-                  <p className="text-3xl font-bold text-green-600">{completedCount2}</p>
-                  <p className="text-[11px] text-muted-foreground font-medium">{t(locale, 'admin.completed')}</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* ── Bulk Upload ── */}
-            <Card className="border-0 shadow-sm bg-white ring-1 ring-[#FFD100]/30">
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-[#FFD100]" />
-                  {t(locale, 'admin.bulkUpload')}
-                </CardTitle>
-                <CardDescription className="text-[11px]">
-                  Upload checkout report to generate tokens
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 space-y-3">
-                <div
-                  className={`border-2 border-dashed rounded-xl p-5 text-center transition-all cursor-pointer ${dragOver ? 'border-[#FFD100] bg-yellow-50' : 'border-gray-200 hover:border-[#FFD100]/50'}`}
-                  onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleBulkUpload(f) }}
-                  onClick={() => {
-                    const input = document.createElement('input')
-                    input.type = 'file'; input.accept = '.xlsx,.xls,.csv'
-                    input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleBulkUpload(f) }
-                    input.click()
-                  }}
-                >
-                  {bulkUploading ? (
-                    <div className="space-y-1"><Loader2 className="w-7 h-7 mx-auto text-[#FFD100] animate-spin" /><p className="text-xs text-muted-foreground">{t(locale, 'admin.processing')}</p></div>
-                  ) : (
-                    <div className="space-y-1"><FileUp className="w-7 h-7 mx-auto text-gray-300" /><p className="text-xs text-muted-foreground">{t(locale, 'admin.dragDrop')}</p><p className="text-[10px] text-muted-foreground">{t(locale, 'admin.supportedFormats')}</p></div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <Badge variant="outline" className="text-[9px] bg-blue-50 text-blue-700 border-blue-200">Rental *</Badge>
-                  <Badge variant="outline" className="text-[9px] bg-blue-50 text-blue-700 border-blue-200">Customer *</Badge>
-                  <Badge variant="outline" className="text-[9px] bg-gray-50 text-gray-600 border-gray-200">Vehicle</Badge>
-                  <Badge variant="outline" className="text-[9px] bg-gray-50 text-gray-600 border-gray-200">Model</Badge>
-                </div>
-
-                <Button variant="outline" size="sm" onClick={downloadTemplate} className="text-xs h-7 w-full">
-                  <Download className="w-3 h-3 mr-1" />{t(locale, 'admin.downloadTemplate')}
-                </Button>
-
-                {/* Bulk results */}
-                {bulkResult && (
-                  <div className="space-y-2 animate-in fade-in slide-in-from-bottom-2">
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-2.5">
-                      <p className="font-semibold text-green-800 text-xs mb-1">{t(locale, 'admin.uploadSuccess')}</p>
-                      <div className="flex gap-3 text-xs">
-                        <span className="text-green-700">{bulkResult.summary.created} {t(locale, 'admin.created')}</span>
-                        <span className="text-amber-700">{bulkResult.summary.skipped} {t(locale, 'admin.skipped')}</span>
-                        {bulkResult.summary.errors > 0 && <span className="text-red-700">{bulkResult.summary.errors} {t(locale, 'admin.errors')}</span>}
-                      </div>
-                    </div>
-                    <div className="max-h-48 overflow-y-auto border rounded-lg">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-[10px] h-7">{t(locale, 'admin.contract')}</TableHead>
-                            <TableHead className="text-[10px]">{t(locale, 'admin.client')}</TableHead>
-                            <TableHead className="text-[10px]">{t(locale, 'admin.tokenLink')}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {bulkResult.results.map((r, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="font-mono text-xs py-1">{r.contractNumber}</TableCell>
-                              <TableCell className="text-xs py-1 max-w-[80px] truncate">{r.customerName}</TableCell>
-                              <TableCell className="py-1">
-                                {r.link ? (
-                                  <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1" onClick={() => copyToClipboard(r.link!, r.token || '')}>
-                                    {copiedToken === r.token ? <CheckCircle2 className="w-3 h-3 text-green-600 mr-0.5" /> : <ClipboardCopy className="w-3 h-3 mr-0.5" />}
-                                    {copiedToken === r.token ? t(locale, 'admin.copied') : t(locale, 'admin.copyLink')}
-                                  </Button>
-                                ) : <span className="text-[10px] text-red-500">{r.error}</span>}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* ── Quick Token Access — mobile only ── */}
-            <Card className="border-0 shadow-sm bg-white md:hidden">
-              <CardContent className="p-3">
-                <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-                  <ArrowRightToLine className="w-3.5 h-3.5" />Quick Token Access
-                </p>
-                <div className="flex gap-2">
-                  <Input placeholder="Enter token code..." value={token} onChange={e => setToken(e.target.value)} onKeyDown={e => e.key === 'Enter' && doValidateToken(token)} className="flex-1 font-mono text-sm h-9" />
-                  <Button onClick={() => doValidateToken(token)} disabled={validating || !token.trim()} className="bg-black hover:bg-black/90 text-[#FFD100] px-4 h-9">
-                    {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightToLine className="w-4 h-4" />}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* ========== RIGHT: CONTRACTS TABLE ========== */}
-          <div className="space-y-4 order-1 lg:order-2">
-            {/* ── Toolbar ── */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by contract, name, plate, model..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-9 h-9 text-sm bg-white border-0 shadow-sm"
-                />
-              </div>
-              <Button onClick={() => setShowNewContractDialog(true)} className="bg-black hover:bg-black/90 text-[#FFD100] font-semibold h-9 rounded-lg shadow-sm">
-                <Plus className="w-4 h-4 mr-1.5" /><span className="hidden sm:inline">{t(locale, 'admin.newContract')}</span><span className="sm:hidden">New</span>
+        {/* Submit Button */}
+        {contract && accessToken && !accessToken.usedAt && (
+          <div className="fixed bottom-0 left-0 right-0 bg-[#1a1a1a]/95 backdrop-blur border-t border-[#FFCC00]/20 p-4">
+            <div className="max-w-lg mx-auto">
+              <Button
+                className="hertz-btn-gold w-full py-3 text-lg"
+                disabled={!allRequiredCompleted}
+                onClick={handleSubmit}
+              >
+                <Send className="w-5 h-5 mr-2" />
+                {t('checklist.submit', locale)}
               </Button>
-              <Button variant="outline" onClick={loadAdminContracts} disabled={adminLoading} className="h-9 w-9 rounded-lg border-gray-200 p-0">
-                <RefreshCw className={`w-4 h-4 ${adminLoading ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-
-            {/* ── Contracts ── */}
-            {adminContracts.length === 0 && !adminLoading ? (
-              <Card className="border-0 shadow-sm bg-white">
-                <CardContent className="py-16 text-center text-muted-foreground">
-                  <FolderOpen className="w-14 h-14 mx-auto mb-3 opacity-15" />
-                  <p className="text-base font-medium">{t(locale, 'admin.noContracts')}</p>
-                  <p className="text-sm mt-1 text-muted-foreground/70">Create a new contract or upload a checkout report to get started</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border-0 shadow-sm bg-white overflow-hidden">
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-                        <TableHead className="text-xs font-semibold h-9">Contract</TableHead>
-                        <TableHead className="text-xs font-semibold">Customer</TableHead>
-                        <TableHead className="text-xs font-semibold hidden sm:table-cell">Vehicle</TableHead>
-                        <TableHead className="text-xs font-semibold hidden md:table-cell">Plate</TableHead>
-                        <TableHead className="text-xs font-semibold text-center">Photos</TableHead>
-                        <TableHead className="text-xs font-semibold text-center">Status</TableHead>
-                        <TableHead className="text-xs font-semibold hidden lg:table-cell">Tokens</TableHead>
-                        <TableHead className="text-xs font-semibold text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredContracts.map(contract => {
-                        const activeToken = contract.tokens.find(tk => !tk.usedAt && !tk.isExpired)
-                        const isExpanded = expandedContract === contract.id
-                        return (
-                          <React.Fragment key={contract.id}>
-                            <TableRow className="group hover:bg-gray-50/50">
-                              <TableCell className="font-mono font-bold text-sm py-2.5">
-                                {contract.contractNumber}
-                              </TableCell>
-                              <TableCell className="py-2.5">
-                                <div>
-                                  <p className="font-medium text-sm">{contract.customerName}</p>
-                                  {contract.customerEmail && <p className="text-[10px] text-muted-foreground hidden xl:block">{contract.customerEmail}</p>}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-sm py-2.5 hidden sm:table-cell">{contract.vehicleModel}</TableCell>
-                              <TableCell className="font-mono text-sm py-2.5 hidden md:table-cell">{contract.vehiclePlate}</TableCell>
-                              <TableCell className="text-center py-2.5">
-                                <Badge variant="outline" className="text-[10px] font-mono">
-                                  {contract.photosSubmitted}/7
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-center py-2.5">
-                                <Badge className={`text-[10px] px-2 py-0.5 ${contract.status === 'completed' ? 'bg-green-100 text-green-800' : contract.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
-                                  {contract.status === 'completed' ? t(locale, 'admin.completed') : contract.status === 'in_progress' ? t(locale, 'admin.inProgress') : t(locale, 'admin.pending')}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="py-2.5 hidden lg:table-cell">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-xs font-medium">{contract.tokens.length}</span>
-                                  {activeToken && (
-                                    <Badge variant="outline" className="text-[9px] px-1 py-0 bg-green-50 text-green-700 border-green-200">active</Badge>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-2.5 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {activeToken && (
-                                    <Button variant="ghost" size="sm" className="h-7 text-[10px] px-1.5 text-blue-600 hover:text-blue-800" onClick={() => copyToClipboard(`/#token=${activeToken.token}`, activeToken.token)}>
-                                      {copiedToken === activeToken.token ? <CheckCircle2 className="w-3 h-3 mr-0.5" /> : <Link2 className="w-3 h-3 mr-0.5" />}
-                                      <span className="hidden xl:inline">{copiedToken === activeToken.token ? t(locale, 'admin.copied') : 'Link'}</span>
-                                    </Button>
-                                  )}
-                                  {contract.status !== 'completed' && (
-                                    <Button size="sm" className="h-7 text-[10px] px-2 bg-[#FFD100] hover:bg-[#E6BC00] text-black border-0 shadow-none" onClick={() => { setSelectedContractId(contract.id); setShowTokenDialog(true) }}>
-                                      <KeyRound className="w-3 h-3 mr-0.5" />Token
-                                    </Button>
-                                  )}
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setExpandedContract(isExpanded ? null : contract.id)}>
-                                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {/* Expanded token details */}
-                            {isExpanded && (
-                              <TableRow className="bg-gray-50/50">
-                                <TableCell colSpan={8} className="p-0">
-                                  <div className="px-4 py-3 space-y-1.5">
-                                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Access Tokens</p>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                      {contract.tokens.map(tk => (
-                                        <div key={tk.id} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100">
-                                          <code className="text-[11px] font-mono text-gray-600 flex-1 truncate">
-                                            {tk.token.substring(0, 8)}...{tk.token.substring(tk.token.length - 4)}
-                                          </code>
-                                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0" onClick={() => copyToClipboard(`/#token=${tk.token}`, tk.token)}>
-                                            {copiedToken === tk.token ? <CheckCircle2 className="w-3 h-3 text-green-600" /> : <ClipboardCopy className="w-3 h-3 text-gray-400" />}
-                                          </Button>
-                                          <Badge variant="outline" className={`text-[9px] px-1 py-0 shrink-0 ${tk.usedAt ? 'bg-red-50 text-red-600' : tk.isExpired ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-600'}`}>
-                                            {tk.usedAt ? 'Used' : tk.isExpired ? 'Expired' : 'Active'}
-                                          </Badge>
-                                        </div>
-                                      ))}
-                                    </div>
-                                    {/* Mobile-only extra info */}
-                                    <div className="sm:hidden mt-2 text-xs text-muted-foreground">
-                                      {contract.vehicleModel} &bull; {contract.vehiclePlate}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-                {adminLoading && (
-                  <div className="flex justify-center py-6">
-                    <Loader2 className="w-5 h-5 animate-spin text-[#FFD100]" />
-                  </div>
-                )}
-              </Card>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* ── New Contract Dialog ── */}
-      <Dialog open={showNewContractDialog} onOpenChange={setShowNewContractDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base">{t(locale, 'admin.newContractTitle')}</DialogTitle>
-            <DialogDescription className="text-xs">{t(locale, 'admin.newContractDesc')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t(locale, 'admin.contractNumber')} *</Label>
-                <Input className="h-9 text-sm" placeholder="RES-69714" value={newContract.contractNumber} onChange={e => setNewContract(p => ({ ...p, contractNumber: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t(locale, 'admin.customerName')} *</Label>
-                <Input className="h-9 text-sm" placeholder="Full Name" value={newContract.customerName} onChange={e => setNewContract(p => ({ ...p, customerName: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t(locale, 'admin.vehiclePlate')}</Label>
-                <Input className="h-9 text-sm" placeholder="SQZ138" value={newContract.vehiclePlate} onChange={e => setNewContract(p => ({ ...p, vehiclePlate: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t(locale, 'admin.vehicleModel')}</Label>
-                <Input className="h-9 text-sm" placeholder="Picanto" value={newContract.vehicleModel} onChange={e => setNewContract(p => ({ ...p, vehicleModel: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t(locale, 'admin.customerEmail')}</Label>
-                <Input type="email" className="h-9 text-sm" placeholder="email@example.com" value={newContract.customerEmail} onChange={e => setNewContract(p => ({ ...p, customerEmail: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t(locale, 'admin.customerPhone')}</Label>
-                <Input className="h-9 text-sm" placeholder="+356 9999 0000" value={newContract.customerPhone} onChange={e => setNewContract(p => ({ ...p, customerPhone: e.target.value }))} />
-              </div>
-            </div>
-            <Button className="w-full bg-black hover:bg-black/90 text-[#FFD100] font-semibold h-10 rounded-lg" onClick={handleCreateContract} disabled={!newContract.contractNumber || !newContract.customerName}>
-              <Plus className="w-4 h-4 mr-2" />{t(locale, 'admin.createAndGenerate')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Generate Token Dialog ── */}
-      <Dialog open={showTokenDialog} onOpenChange={setShowTokenDialog}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base">{t(locale, 'admin.generateToken')}</DialogTitle>
-            <DialogDescription className="text-xs">{t(locale, 'admin.generateTokenDesc')}</DialogDescription>
-          </DialogHeader>
-          <Button className="w-full bg-[#FFD100] hover:bg-[#E6BC00] text-black font-semibold h-10 rounded-lg" onClick={() => { if (selectedContractId) handleGenerateToken(selectedContractId) }}>
-            <KeyRound className="w-4 h-4 mr-2" />{t(locale, 'admin.generate')}
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Token Link Dialog ── */}
-      <Dialog open={!!newTokenLink} onOpenChange={() => setNewTokenLink(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-600" />
-              {t(locale, 'admin.linkGenerated')}
-            </DialogTitle>
-            <DialogDescription className="text-xs">{t(locale, 'admin.linkGeneratedDesc')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs break-all border">
-              {typeof window !== 'undefined' ? `${window.location.origin}${newTokenLink}` : newTokenLink}
-            </div>
-            <div className="flex gap-2">
-              <Button className="flex-1 bg-black hover:bg-black/90 text-[#FFD100] h-10 rounded-lg" onClick={() => { copyToClipboard(newTokenLink!, newTokenLink!); }}>
-                {copiedToken === newTokenLink ? <><CheckCircle2 className="w-4 h-4 mr-2" />{t(locale, 'admin.copied')}</> : <><ClipboardCopy className="w-4 h-4 mr-2" />{t(locale, 'admin.copyLink')}</>}
-              </Button>
-              {newTokenLink && (
-                <Button variant="outline" className="h-10 rounded-lg" onClick={() => { window.open(newTokenLink, '_blank') }}>
-                  <ExternalLink className="w-4 h-4" />
-                </Button>
+              {!allRequiredCompleted && (
+                <p className="text-gray-400 text-xs mt-2 text-center">{t('checklist.allRequired', locale)}</p>
               )}
             </div>
           </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==================== ADMIN DASHBOARD ====================
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525]">
+      {/* Header */}
+      <div className="bg-[#FFCC00] px-4 py-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="w-8 h-8 text-[#1a1a1a]" />
+            <div>
+              <h1 className="text-[#1a1a1a] font-bold text-xl">{t('admin.title', locale)}</h1>
+              <p className="text-[#1a1a1a]/70 text-sm">Hertz Malta Vehicle Check-in Portal</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="text-[#1a1a1a]" onClick={() => seedRequirements()}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Seed
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="max-w-6xl mx-auto px-4 mt-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="hertz-card">
+            <CardContent className="p-4 text-center">
+              <p className="text-gray-400 text-xs">{t('admin.totalContracts', locale)}</p>
+              <p className="text-[#FFCC00] font-bold text-2xl">{stats.total}</p>
+            </CardContent>
+          </Card>
+          <Card className="hertz-card">
+            <CardContent className="p-4 text-center">
+              <p className="text-gray-400 text-xs">{t('admin.pending', locale)}</p>
+              <p className="text-yellow-400 font-bold text-2xl">{stats.pending}</p>
+            </CardContent>
+          </Card>
+          <Card className="hertz-card">
+            <CardContent className="p-4 text-center">
+              <p className="text-gray-400 text-xs">{t('admin.inProgress', locale)}</p>
+              <p className="text-blue-400 font-bold text-2xl">{stats.inProgress}</p>
+            </CardContent>
+          </Card>
+          <Card className="hertz-card">
+            <CardContent className="p-4 text-center">
+              <p className="text-gray-400 text-xs">{t('admin.completed', locale)}</p>
+              <p className="text-green-400 font-bold text-2xl">{stats.completed}</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="max-w-6xl mx-auto px-4 mt-4 flex flex-wrap gap-3 items-center">
+        <div className="flex-1 min-w-[200px]">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Input
+              placeholder={t('admin.search', locale)}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 bg-[#333] border-gray-600 text-white placeholder-gray-500"
+            />
+          </div>
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[140px] bg-[#333] border-gray-600 text-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-[#333] border-gray-600">
+            <SelectItem value="all">{t('admin.all', locale)}</SelectItem>
+            <SelectItem value="pending">{t('admin.pending', locale)}</SelectItem>
+            <SelectItem value="in_progress">{t('admin.inProgress', locale)}</SelectItem>
+            <SelectItem value="completed">{t('admin.completed', locale)}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button className="hertz-btn-gold" onClick={() => setShowNewContract(true)}>
+          <Plus className="w-4 h-4 mr-1" />
+          {t('admin.newContract', locale)}
+        </Button>
+        <Button variant="outline" className="border-gray-600 text-gray-300 hover:border-[#FFCC00] hover:text-[#FFCC00]"
+          onClick={() => setShowBulkUpload(true)}>
+          <FileUp className="w-4 h-4 mr-1" />
+          {t('admin.bulkUpload', locale)}
+        </Button>
+      </div>
+
+      {/* Contracts Table */}
+      <div className="max-w-6xl mx-auto px-4 mt-4">
+        {filteredContracts.length === 0 ? (
+          <Card className="hertz-card">
+            <CardContent className="p-8 text-center">
+              <p className="text-gray-400">{t('admin.noContracts', locale)}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <ScrollArea className="max-h-[600px] custom-scrollbar">
+            <div className="space-y-2">
+              {filteredContracts.map((c) => (
+                <motion.div key={c.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <Card className="hertz-card hover:hertz-glow transition-all">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        {/* Left: Contract info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[#FFCC00] font-semibold">{c.contractNumber}</span>
+                            <StatusBadge status={c.status} locale={locale} />
+                          </div>
+                          <div className="text-sm text-gray-300 grid grid-cols-2 gap-x-4 gap-y-1">
+                            <span>{c.customerName}</span>
+                            <span>{c.vehiclePlate}</span>
+                            <span className="text-gray-400">{c.vehicleModel}</span>
+                            {c.vehicleColor && <span className="text-gray-400">{c.vehicleColor}</span>}
+                          </div>
+                          {/* Token info */}
+                          {c.tokens && c.tokens.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              {c.tokens.map((tk) => (
+                                <div key={tk.id} className="flex items-center gap-2 text-xs">
+                                  <Link className="w-3 h-3 text-gray-400" />
+                                  <code className="text-gray-400 bg-[#333] px-2 py-0.5 rounded select-all">{tk.token}</code>
+                                  <span className="text-gray-500">
+                                    {t('admin.tokenExpiry', locale)}: {new Date(tk.expiresAt).toLocaleString()}
+                                  </span>
+                                  {tk.usedAt && <Badge className="bg-green-500/20 text-green-400 text-xs">Used</Badge>}
+                                  <Button variant="ghost" size="sm" className="h-6 text-gray-400 hover:text-[#FFCC00]"
+                                    onClick={() => copyTokenLink(tk.token)}>
+                                    <Copy className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* Media count */}
+                          {c.media && c.media.length > 0 && (
+                            <div className="mt-1 text-xs text-gray-400">
+                              <Eye className="w-3 h-3 inline mr-1" />
+                              {c.media.length} {t('admin.mediaCount', locale)}
+                              ({c.media.filter(m => m.mediaType === 'photo').length} photos, {c.media.filter(m => m.mediaType === 'video').length} videos)
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right: Actions */}
+                        <div className="flex gap-1 flex-shrink-0">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" className="text-gray-400 hover:text-[#FFCC00]"
+                                  onClick={() => generateToken(c.id)}>
+                                  <QrCode className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{t('admin.generateToken', locale)}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-blue-400"
+                            onClick={() => { setEditingContract(c); setShowEditContract(true); }}>
+                            <Edit3 className="w-4 h-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="sm" className="text-gray-400 hover:text-red-400">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="bg-[#252525] border-gray-600 text-white">
+                              <AlertDialogTitle>{t('admin.deleteConfirmTitle', locale)}</AlertDialogTitle>
+                              <AlertDialogDescription className="text-gray-400">
+                                {t('admin.deleteConfirm', locale)}
+                              </AlertDialogDescription>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="bg-[#333] text-gray-300 border-gray-600">{t('admin.cancel', locale)}</AlertDialogCancel>
+                                <AlertDialogAction className="bg-red-500 text-white" onClick={() => deleteContract(c.id)}>
+                                  {t('admin.delete', locale)}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+      </div>
+
+      {/* New Contract Dialog */}
+      <Dialog open={showNewContract} onOpenChange={setShowNewContract}>
+        <DialogContent className="bg-[#252525] border-gray-600 text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-[#FFCC00]">{t('admin.newContract', locale)}</DialogTitle>
+            <DialogDescription className="text-gray-400">Create a new rental contract with auto-generated token</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <div>
+              <Label className="text-gray-300">{t('admin.contractNumber', locale)} *</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.contractNumber}
+                onChange={(e) => setNewContract(p => ({ ...p, contractNumber: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-gray-300">{t('admin.customerName', locale)} *</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.customerName}
+                onChange={(e) => setNewContract(p => ({ ...p, customerName: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-gray-300">{t('admin.customerEmail', locale)}</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" type="email" value={newContract.customerEmail}
+                onChange={(e) => setNewContract(p => ({ ...p, customerEmail: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-gray-300">{t('admin.customerPhone', locale)}</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" type="tel" value={newContract.customerPhone}
+                onChange={(e) => setNewContract(p => ({ ...p, customerPhone: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-gray-300">{t('admin.vehiclePlate', locale)} *</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.vehiclePlate}
+                onChange={(e) => setNewContract(p => ({ ...p, vehiclePlate: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-gray-300">{t('admin.vehicleModel', locale)} *</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.vehicleModel}
+                onChange={(e) => setNewContract(p => ({ ...p, vehicleModel: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-gray-300">{t('admin.vehicleColor', locale)}</Label>
+              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.vehicleColor}
+                onChange={(e) => setNewContract(p => ({ ...p, vehicleColor: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setShowNewContract(false)}>
+              {t('admin.cancel', locale)}
+            </Button>
+            <Button className="hertz-btn-gold" onClick={createContract}>
+              {t('admin.create', locale)}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Footer ── */}
-      <footer className="w-full bg-black/5 py-3 text-center text-[10px] text-muted-foreground mt-auto">
-        Hertz Malta &copy; {new Date().getFullYear()} &mdash; Vehicle Photo Check-in Portal
-      </footer>
+      {/* Edit Contract Dialog */}
+      <Dialog open={showEditContract} onOpenChange={setShowEditContract}>
+        <DialogContent className="bg-[#252525] border-gray-600 text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-[#FFCC00]">{t('admin.edit', locale)}</DialogTitle>
+          </DialogHeader>
+          {editingContract && (
+            <div className="space-y-3 py-4">
+              <div>
+                <Label className="text-gray-300">{t('admin.contractNumber', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.contractNumber}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, contractNumber: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.customerName', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.customerName}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, customerName: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.customerEmail', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.customerEmail || ''}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, customerEmail: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.customerPhone', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.customerPhone || ''}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, customerPhone: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.vehiclePlate', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.vehiclePlate}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, vehiclePlate: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.vehicleModel', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.vehicleModel}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, vehicleModel: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.vehicleColor', locale)}</Label>
+                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.vehicleColor || ''}
+                  onChange={(e) => setEditingContract(p => p ? ({ ...p, vehicleColor: e.target.value }) : p)} />
+              </div>
+              <div>
+                <Label className="text-gray-300">{t('admin.status', locale)}</Label>
+                <Select value={editingContract.status} onValueChange={(v) => setEditingContract(p => p ? ({ ...p, status: v }) : p)}>
+                  <SelectTrigger className="bg-[#333] border-gray-600 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#333] border-gray-600">
+                    <SelectItem value="pending">{t('admin.pending', locale)}</SelectItem>
+                    <SelectItem value="in_progress">{t('admin.inProgress', locale)}</SelectItem>
+                    <SelectItem value="completed">{t('admin.completed', locale)}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setShowEditContract(false)}>
+              {t('admin.cancel', locale)}
+            </Button>
+            <Button className="hertz-btn-gold" onClick={updateContract}>
+              {t('admin.save', locale)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Upload Dialog */}
+      <Dialog open={showBulkUpload} onOpenChange={setShowBulkUpload}>
+        <DialogContent className="bg-[#252525] border-gray-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-[#FFCC00]">{t('admin.bulkUpload', locale)}</DialogTitle>
+            <DialogDescription className="text-gray-400">Upload an Excel file (.xlsx) with contract data</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-[#FFCC00] transition-colors">
+              <FileUp className="w-12 h-12 text-gray-400 mb-3 mx-auto" />
+              <p className="text-gray-300 mb-2">{t('admin.uploadExcel', locale)}</p>
+              <Input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="bg-[#333] border-gray-600 text-white"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) bulkUpload(file);
+                }}
+                disabled={bulkUploading}
+              />
+              {bulkUploading && (
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#FFCC00]" />
+                  <span className="text-gray-300">Processing...</span>
+                </div>
+              )}
+            </div>
+            <p className="text-gray-400 text-xs mt-3">
+              Supported columns: Rental/Contract, Customer/Name, Email, Phone, Plate/License, Model/Car, Color
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setShowBulkUpload(false)}>
+              {t('admin.close', locale)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Footer */}
+      <div className="mt-auto py-6 text-center text-gray-500 text-xs">
+        Hertz Malta Vehicle Check-in Portal — Admin Dashboard
+      </div>
     </div>
-  )
+  );
+}
+
+// ==================== Sub-components ====================
+
+function StatusBadge({ status, locale }: { status: string; locale: Locale }) {
+  const config: Record<string, { label: string; cls: string }> = {
+    pending: { label: t('admin.pending', locale), cls: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+    in_progress: { label: t('admin.inProgress', locale), cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+    completed: { label: t('admin.completed', locale), cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
+  };
+  const c = config[status] || { label: status, cls: 'bg-gray-500/20 text-gray-400 border-gray-500/30' };
+  return <Badge variant="outline" className={c.cls}>{c.label}</Badge>;
+}
+
+function CarDiagram({
+  checklist,
+  locale,
+  onSelect,
+  getReqLabel,
+}: {
+  checklist: PhotoRequirement[];
+  locale: Locale;
+  onSelect: (key: string) => void;
+  getReqLabel: (req: PhotoRequirement) => string;
+}) {
+  // Get counts per key
+  const counts: Record<string, number> = {};
+  const completed: Record<string, boolean> = {};
+  checklist.forEach(r => {
+    counts[r.key] = (r.submissions?.length || 0);
+    completed[r.key] = (r.submissions?.length || 0) > 0;
+  });
+
+  return (
+    <svg viewBox="0 0 300 180" className="w-full max-w-xs mx-auto">
+      {/* Car body */}
+      <rect x="60" y="50" width="180" height="70" rx="20" fill="#333" stroke="#FFCC00" strokeWidth="1.5" />
+
+      {/* Car roof */}
+      <path d="M90 50 Q150 20 210 50" fill="#333" stroke="#FFCC00" strokeWidth="1.5" />
+
+      {/* Wheels */}
+      <circle cx="100" cy="120" r="18" fill="#444" stroke="#FFCC00" strokeWidth="1.5" />
+      <circle cx="100" cy="120" r="8" fill="#333" />
+      <circle cx="200" cy="120" r="18" fill="#444" stroke="#FFCC00" strokeWidth="1.5" />
+      <circle cx="200" cy="120" r="8" fill="#333" />
+
+      {/* Interior area */}
+      <rect x="95" y="32" width="110" height="16" rx="4" fill="transparent" stroke="#FFCC00" strokeWidth="0.5" />
+
+      {/* Clickable zones */}
+      {/* Front zone */}
+      <g className="car-zone" onClick={() => onSelect('front')}>
+        <rect x="60" y="50" width="35" height="70" rx="10" fill={completed['front'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['front'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
+        <text x="77" y="90" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('front', locale)}</text>
+        {counts['front'] > 0 && (
+          <g>
+            <circle cx="77" cy="62" r="8" fill={completed['front'] ? '#4CAF50' : '#FFCC00'} />
+            <text x="77" y="65" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['front']}</text>
+          </g>
+        )}
+      </g>
+
+      {/* Passenger side */}
+      <g className="car-zone" onClick={() => onSelect('passenger_side')}>
+        <rect x="95" y="70" width="110" height="25" rx="4" fill={completed['passenger_side'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['passenger_side'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
+        <text x="150" y="87" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('passenger_side', locale)}</text>
+        {counts['passenger_side'] > 0 && (
+          <g>
+            <circle cx="130" cy="73" r="8" fill={completed['passenger_side'] ? '#4CAF50' : '#FFCC00'} />
+            <text x="130" y="76" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['passenger_side']}</text>
+          </g>
+        )}
+      </g>
+
+      {/* Back zone */}
+      <g className="car-zone" onClick={() => onSelect('back')}>
+        <rect x="205" y="50" width="35" height="70" rx="10" fill={completed['back'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['back'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
+        <text x="222" y="90" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('back', locale)}</text>
+        {counts['back'] > 0 && (
+          <g>
+            <circle cx="222" cy="62" r="8" fill={completed['back'] ? '#4CAF50' : '#FFCC00'} />
+            <text x="222" y="65" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['back']}</text>
+          </g>
+        )}
+      </g>
+
+      {/* Driver side */}
+      <g className="car-zone" onClick={() => onSelect('driver_side')}>
+        <rect x="95" y="45" width="110" height="25" rx="4" fill={completed['driver_side'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['driver_side'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
+        <text x="150" y="62" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('driver_side', locale)}</text>
+        {counts['driver_side'] > 0 && (
+          <g>
+            <circle cx="170" cy="48" r="8" fill={completed['driver_side'] ? '#4CAF50' : '#FFCC00'} />
+            <text x="170" y="51" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['driver_side']}</text>
+          </g>
+        )}
+      </g>
+
+      {/* Interior zone */}
+      <g className="car-zone" onClick={() => onSelect('interior')}>
+        <rect x="95" y="30" width="110" height="16" rx="4" fill={completed['interior'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['interior'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
+        <text x="150" y="41" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('interior', locale)}</text>
+        {counts['interior'] > 0 && (
+          <g>
+            <circle cx="112" cy="34" r="8" fill={completed['interior'] ? '#4CAF50' : '#FFCC00'} />
+            <text x="112" y="37" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['interior']}</text>
+          </g>
+        )}
+      </g>
+    </svg>
+  );
 }
