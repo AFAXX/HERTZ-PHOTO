@@ -21,7 +21,7 @@ model RentalContract {
   updatedAt     DateTime   @updatedAt
 
   tokens        AccessToken[]
-  media         MediaSubmission[]
+  photos        PhotoSubmission[]
 }
 
 model AccessToken {
@@ -44,20 +44,17 @@ model PhotoRequirement {
   orderIndex  Int     @default(0)
   required    Boolean @default(true)
   icon        String?           // Lucide icon name
-  allowVideo  Boolean @default(true) // Whether video is accepted for this requirement
 
-  submissions MediaSubmission[]
+  submissions PhotoSubmission[]
 }
 
-model MediaSubmission {
+model PhotoSubmission {
   id            String   @id @default(cuid())
   contractId    String
   requirementId String
-  mediaType     String   @default("photo") // photo | video
   fileName      String
   fileSize      Int
   mimeType      String
-  duration      Int?     // Video duration in seconds (null for photos)
   // Local storage path (during development / fallback)
   localPath     String?
   // Microsoft Graph API upload URL / item ID

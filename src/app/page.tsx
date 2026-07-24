@@ -1,1312 +1,595 @@
 'use client';
-
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  CarFront, ArrowRight, ArrowLeft, Car, Armchair, Camera, Video, Upload,
-  CheckCircle2, XCircle, Clock, Copy, Trash2, Edit3, Plus, FileUp,
-  Search, ChevronRight, Globe, Play, Loader2, AlertCircle, Shield,
-  Send, RefreshCw, Eye, X, Link, QrCode, Download, Info
-} from 'lucide-react';
-import { t, LOCALES, type Locale, RTL_LOCALES, getPhotoLabel } from '@/lib/i18n';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { toast } from 'sonner';
-
-// Types
-interface RentalContract {
-  id: string;
-  contractNumber: string;
-  customerName: string;
-  customerEmail?: string | null;
-  customerPhone?: string | null;
-  vehiclePlate: string;
-  vehicleModel: string;
-  vehicleColor?: string | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  tokens?: AccessToken[];
-  media?: MediaSubmission[];
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { t, LOCALES, type Locale } from '@/lib/i18n';
+interface AdminContract {
+id: string; contractNumber: string; customerName: string; customerEmail: string | null; customerPhone: string | null;
+vehiclePlate: string; vehicleModel: string; vehicleColor: string | null; status: string; createdAt: string;
+tokens: Array<{ id: string; token: string; expiresAt: string; usedAt: string | null; isExpired: boolean }>;
+photosSubmitted: number; photos: Array<{ key: string; label: string; fileName: string; uploadedAt: string }>;
 }
-
-interface AccessToken {
-  id: string;
-  token: string;
-  contractId: string;
-  expiresAt: string;
-  usedAt?: string | null;
-  createdAt: string;
+interface ChecklistItem {
+id: string; key: string; label: string; labelEn: string | null; description: string | null; icon: string | null;
+required: boolean; completed: boolean; photoCount: number;
 }
-
-interface PhotoRequirement {
-  id: string;
-  key: string;
-  label: string;
-  labelEn?: string | null;
-  description?: string | null;
-  orderIndex: number;
-  required: boolean;
-  icon?: string | null;
-  allowVideo: boolean;
-  submissions?: MediaSubmission[];
-  completed?: boolean;
-  photoCount?: number;
-  videoCount?: number;
+interface ValidatedContract {
+id: string; contractNumber: string; customerName: string; vehiclePlate: string; vehicleModel: string; vehicleColor: string | null; status: string;
 }
-
-interface MediaSubmission {
-  id: string;
-  contractId: string;
-  requirementId: string;
-  mediaType: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
-  duration?: number | null;
-  localPath?: string | null;
-  graphItemId?: string | null;
-  graphDriveId?: string | null;
-  uploadedAt: string;
-  requirement?: PhotoRequirement;
+const MAX_PHOTOS = 10;
+function CarDiagram({ onSelect, photoCounts }: { onSelect: (key: string) => void; photoCounts: Record<string, number> }) {
+const g = (k: string) => photoCounts[k] || 0;
+const done = (k: string) => g(k) > 0;
+return (
+ <svg viewBox="0 0 300 540" className="w-full max-w-[280px] mx-auto">
+ <path d="M108 510 Q60 490 48 430 L48 110 Q48 55 108 32 L192 32 Q252 55 252 110 L252 430 Q240 490 192 510 Z" fill="rgba(0,0,0,0.06)" transform="translate(4,4)" />
+ <path d="M108 510 Q60 490 48 430 L48 110 Q48 55 108 32 L192 32 Q252 55 252 110 L252 430 Q240 490 192 510 Z" fill="#f1f5f9" stroke="#94a3b8" strokeWidth="2.5" />
+ <path d="M120 430 L120 490 Q150 510 180 490 L180 430 Q150 420 120 430 Z" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1" opacity="0.5" />
+ <path d="M95 390 Q150 410 205 390 L185 350 Q150 365 115 350 Z" fill="#bfdbfe" stroke="#60a5fa" strokeWidth="1.5" />
+ <rect x="80" y="180" width="140" height="170" rx="20" fill="#e8ecf1" stroke="#b0b8c4" strokeWidth="1" />
+ <path d="M95 180 Q150 160 205 180 L185 215 Q150 200 115 215 Z" fill="#bfdbfe" stroke="#60a5fa" strokeWidth="1.5" />
+ <path d="M120 110 L120 180 Q150 170 180 180 L180 110 Q150 100 120 110 Z" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1" opacity="0.5" />
+ <rect x="38" y="365" width="12" height="20" rx="4" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="1" />
+ <rect x="250" y="365" width="12" height="20" rx="4" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="1" />
+ <ellipse cx="100" cy="478" rx="12" ry="8" fill="#fde68a" stroke="#f59e0b" strokeWidth="1.5" />
+ <ellipse cx="200" cy="478" rx="12" ry="8" fill="#fde68a" stroke="#f59e0b" strokeWidth="1.5" />
+ <ellipse cx="100" cy="60" rx="10" ry="7" fill="#fca5a5" stroke="#ef4444" strokeWidth="1.5" />
+ <ellipse cx="200" cy="60" rx="10" ry="7" fill="#fca5a5" stroke="#ef4444" strokeWidth="1.5" />
+ <ellipse cx="62" cy="155" rx="18" ry="28" fill="#334155" stroke="#1e293b" strokeWidth="2" />
+ <ellipse cx="62" cy="155" rx="8" ry="14" fill="#64748b" />
+ <ellipse cx="238" cy="155" rx="18" ry="28" fill="#334155" stroke="#1e293b" strokeWidth="2" />
+ <ellipse cx="238" cy="155" rx="8" ry="14" fill="#64748b" />
+ <ellipse cx="68" cy="420" rx="18" ry="26" fill="#334155" stroke="#1e293b" strokeWidth="2" />
+ <ellipse cx="68" cy="420" rx="8" ry="13" fill="#64748b" />
+ <ellipse cx="232" cy="420" rx="18" ry="26" fill="#334155" stroke="#1e293b" strokeWidth="2" />
+ <ellipse cx="232" cy="420" rx="8" ry="13" fill="#64748b" />
+  <g onClick={() => onSelect('front')} style={{ cursor: 'pointer' }}>
+     <rect x="90" y="435" width="120" height="60" rx="10" fill={done('front') ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.05)'} stroke={done('front') ? '#22c55e' : '#94a3b8'} strokeWidth="1.5" strokeDasharray={done('front') ? 'none' : '5 3'} />
+     {g('front') > 0 && <><circle cx="200" cy="445" r="9" fill="#22c55e" /><text x="200" y="449" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">{g('front')}</text></>}
+   </g>
+   <g onClick={() => onSelect('back')} style={{ cursor: 'pointer' }}>
+     <rect x="90" y="75" width="120" height="60" rx="10" fill={done('back') ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.05)'} stroke={done('back') ? '#22c55e' : '#94a3b8'} strokeWidth="1.5" strokeDasharray={done('back') ? 'none' : '5 3'} />
+     {g('back') > 0 && <><circle cx="200" cy="85" r="9" fill="#22c55e" /><text x="200" y="89" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">{g('back')}</text></>}
+   </g>
+   <g onClick={() => onSelect('passenger_side')} style={{ cursor: 'pointer' }}>
+     <rect x="28" y="195" width="50" height="130" rx="10" fill={done('passenger_side') ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.05)'} stroke={done('passenger_side') ? '#22c55e' : '#94a3b8'} strokeWidth="1.5" strokeDasharray={done('passenger_side') ? 'none' : '5 3'} />
+     {g('passenger_side') > 0 && <><circle cx="68" cy="205" r="9" fill="#22c55e" /><text x="68" y="209" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">{g('passenger_side')}</text></>}
+   </g>
+   <g onClick={() => onSelect('driver_side')} style={{ cursor: 'pointer' }}>
+     <rect x="222" y="195" width="50" height="130" rx="10" fill={done('driver_side') ? 'rgba(34,197,94,0.15)' : 'rgba(148,163,184,0.05)'} stroke={done('driver_side') ? '#22c55e' : '#94a3b8'} strokeWidth="1.5" strokeDasharray={done('driver_side') ? 'none' : '5 3'} />
+     {g('driver_side') > 0 && <><circle cx="262" cy="205" r="9" fill="#22c55e" /><text x="262" y="209" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">{g('driver_side')}</text></>}
+   </g>
+   <text x="150" y="525" textAnchor="middle" fill="#475569" fontSize="11" fontWeight="700" letterSpacing="1">FRONT</text>
+   <text x="150" y="22" textAnchor="middle" fill="#475569" fontSize="11" fontWeight="700" letterSpacing="1">BACK</text>
+   <text x="14" y="265" textAnchor="middle" fill="#475569" fontSize="9" fontWeight="600" transform="rotate(-90,14,265)" letterSpacing="0.5">PASSENGER</text>
+   <text x="286" y="265" textAnchor="middle" fill="#475569" fontSize="9" fontWeight="600" transform="rotate(90,286,265)" letterSpacing="0.5">DRIVER</text>
+ </svg>
+);
 }
-
-type AppMode = 'admin' | 'customer' | 'completed';
-
-const ICON_MAP: Record<string, React.ReactNode> = {
-  CarFront: <CarFront className="w-5 h-5" />,
-  ArrowRight: <ArrowRight className="w-5 h-5" />,
-  ArrowLeft: <ArrowLeft className="w-5 h-5" />,
-  Car: <Car className="w-5 h-5" />,
-  Armchair: <Armchair className="w-5 h-5" />,
+function LanguageSelector({ locale, setLocale, dark = false }: { locale: Locale; setLocale: (l: Locale) => void; dark?: boolean }) {
+const [open, setOpen] = useState(false);
+const currentLocale = LOCALES.find(l => l.code === locale) || LOCALES[0];
+return (
+ <div className="relative">
+ <button
+onClick={() => setOpen(!open)}
+className={'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ' + (dark ? 'border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50')}
+ >
+ <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
+{currentLocale.nativeName}
+ <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+ </button>
+{open && (
+ <>
+ <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+ <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-gray-200 py-1 z-50 min-w-[160px] max-h-[300px] overflow-y-auto">
+{LOCALES.map(l => (
+ <button
+key={l.code}
+onClick={() => { setLocale(l.code); setOpen(false); }}
+className={'w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ' + (l.code === locale ? 'font-semibold text-yellow-700 bg-yellow-50' : 'text-gray-700')}
+ >
+ <span className="mr-2">{l.code.toUpperCase()}</span>
+{l.nativeName}
+ </button>
+))}
+ </div>
+ </>
+)}
+ </div>
+);
+}
+export default function Home() {
+const [locale, setLocale] = useState<Locale>('it');
+// Admin panel is always in English — no language switch needed there.
+const adminLocale: Locale = 'en';
+const [mode, setMode] = useState<'loading' | 'admin' | 'customer' | 'completed'>('loading');
+const [token, setToken] = useState('');
+const [contracts, setContracts] = useState<AdminContract[]>([]);
+const [searchQuery, setSearchQuery] = useState('');
+const [statusFilter, setStatusFilter] = useState<string>('all');
+const [showCreate, setShowCreate] = useState(false);
+const [createForm, setCreateForm] = useState({ contractNumber: '', customerName: '', customerEmail: '', customerPhone: '', vehiclePlate: '', vehicleModel: '', vehicleColor: '' });
+const [uploading, setUploading] = useState(false);
+const [bulkResult, setBulkResult] = useState<any>(null);
+const [tokenDialog, setTokenDialog] = useState<{ contractId: string; contractNumber: string } | null>(null);
+const [generatedToken, setGeneratedToken] = useState<{ token: string; expiresAt: string; link: string } | null>(null);
+const [copied, setCopied] = useState('');
+// DELETE STATES
+const [selectedContracts, setSelectedContracts] = useState<Set<string>>(new Set());
+const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
+const [contract, setContract] = useState<ValidatedContract | null>(null);
+const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+const [photoCounts, setPhotoCounts] = useState<Record<string, number>>({});
+const [localPreviews, setLocalPreviews] = useState<Record<string, string[]>>({});
+const [activeKey, setActiveKey] = useState<string | null>(null);
+const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
+const [error, setError] = useState('');
+const [isSubmitting, setIsSubmitting] = useState(false);
+const fileInputRef = useRef<HTMLInputElement>(null);
+const objectUrlsRef = useRef<string[]>([]);
+// Cleanup object URLs on unmount to prevent memory leaks
+useEffect(() => {
+return () => {
+objectUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
 };
-
-export default function HomePage() {
-  // Core state
-  const [mode, setMode] = useState<AppMode>('admin');
-  const [locale, setLocale] = useState<Locale>('en');
-  const [tokenValue, setTokenValue] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  // Admin state
-  const [contracts, setContracts] = useState<RentalContract[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [showNewContract, setShowNewContract] = useState(false);
-  const [showEditContract, setShowEditContract] = useState(false);
-  const [editingContract, setEditingContract] = useState<RentalContract | null>(null);
-  const [newContract, setNewContract] = useState({
-    contractNumber: '', customerName: '', customerEmail: '', customerPhone: '',
-    vehiclePlate: '', vehicleModel: '', vehicleColor: ''
-  });
-  const [showBulkUpload, setShowBulkUpload] = useState(false);
-  const [bulkUploading, setBulkUploading] = useState(false);
-
-  // Customer state
-  const [contract, setContract] = useState<RentalContract | null>(null);
-  const [accessToken, setAccessToken] = useState<AccessToken | null>(null);
-  const [checklist, setChecklist] = useState<PhotoRequirement[]>([]);
-  const [tokenError, setTokenError] = useState<string | null>(null);
-  const [tokenErrorCode, setTokenErrorCode] = useState<string | null>(null);
-  const [uploadingItem, setUploadingItem] = useState<string | null>(null);
-  const [mediaModes, setMediaModes] = useState<Record<string, 'photo' | 'video'>>({});
-  const [showLanguageSelect, setShowLanguageSelect] = useState(true);
-  const [selectedRequirement, setSelectedRequirement] = useState<string | null>(null);
-  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  // Detect mode from URL hash
-  useEffect(() => {
-    const checkHash = () => {
-      const hash = window.location.hash;
-      if (hash.startsWith('#token=')) {
-        const tk = hash.replace('#token=', '');
-        setTokenValue(tk);
-        setMode('customer');
-        setShowLanguageSelect(true);
-      } else {
-        setMode('admin');
-      }
-      setLoading(false);
-    };
-    checkHash();
-    window.addEventListener('hashchange', checkHash);
-    return () => window.removeEventListener('hashchange', checkHash);
-  }, []);
-
-  const loadContracts = async () => {
-    try {
-      const res = await fetch('/api/admin/contracts');
-      if (res.ok) {
-        const data = await res.json();
-        setContracts(data.contracts || []);
-      }
-    } catch (err) {
-      toast.error('Failed to load contracts');
-    }
-  };
-
-  const validateToken = async () => {
-    try {
-      const res = await fetch('/api/token/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tokenValue }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setTokenError(data.error);
-        setTokenErrorCode(data.code);
-        if (data.contract) setContract(data.contract);
-        return;
-      }
-      setContract(data.contract);
-      setAccessToken(data.token);
-      setChecklist(data.checklist || []);
-      setTokenError(null);
-      setTokenErrorCode(null);
-      // Init media modes
-      const modes: Record<string, 'photo' | 'video'> = {};
-      (data.checklist || []).forEach((r: PhotoRequirement) => { modes[r.id] = 'photo'; });
-      setMediaModes(modes);
-    } catch (err) {
-      setTokenError(t('landing.connectionError', locale));
-      setTokenErrorCode('connection');
-    }
-  };
-
-  // Load admin data
-  useEffect(() => {
-    if (mode === 'admin') {
-      fetch('/api/admin/contracts')
-        .then(res => res.ok ? res.json() : null)
-        .then(data => { if (data) setContracts(data.contracts || []); })
-        .catch(() => { toast.error('Failed to load contracts'); });
-    }
-  }, [mode]);
-
-  // Validate customer token
-  useEffect(() => {
-    if (mode === 'customer' && tokenValue) {
-      (async () => {
-        try {
-          const res = await fetch('/api/token/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: tokenValue }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            setTokenError(data.error);
-            setTokenErrorCode(data.code);
-            if (data.contract) setContract(data.contract);
-            return;
-          }
-          setContract(data.contract);
-          setAccessToken(data.token);
-          setChecklist(data.checklist || []);
-          setTokenError(null);
-          setTokenErrorCode(null);
-          const modes: Record<string, 'photo' | 'video'> = {};
-          (data.checklist || []).forEach((r: PhotoRequirement) => { modes[r.id] = 'photo'; });
-          setMediaModes(modes);
-        } catch {
-          setTokenError(t('landing.connectionError', locale));
-          setTokenErrorCode('connection');
-        }
-      })();
-    }
-  }, [mode, tokenValue]);
-
-  const loadChecklist = async () => {
-    if (!tokenValue) return;
-    try {
-      const res = await fetch('/api/token/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tokenValue }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setChecklist(data.checklist || []);
-        setContract(data.contract);
-      }
-    } catch (err) { /* ignore */ }
-  };
-
-  // Admin CRUD operations
-  const createContract = async () => {
-    try {
-      const res = await fetch('/api/admin/contracts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newContract),
-      });
-      if (res.ok) {
-        toast.success('Contract created successfully');
-        setShowNewContract(false);
-        setNewContract({ contractNumber: '', customerName: '', customerEmail: '', customerPhone: '', vehiclePlate: '', vehicleModel: '', vehicleColor: '' });
-        loadContracts();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || 'Failed to create contract');
-      }
-    } catch (err) {
-      toast.error('Failed to create contract');
-    }
-  };
-
-  const updateContract = async () => {
-    if (!editingContract) return;
-    try {
-      const res = await fetch('/api/admin/contracts', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingContract),
-      });
-      if (res.ok) {
-        toast.success('Contract updated');
-        setShowEditContract(false);
-        setEditingContract(null);
-        loadContracts();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || 'Failed to update');
-      }
-    } catch (err) {
-      toast.error('Failed to update contract');
-    }
-  };
-
-  const deleteContract = async (id: string) => {
-    try {
-      const res = await fetch(`/api/admin/contracts?id=${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Contract deleted');
-        loadContracts();
-      } else {
-        toast.error('Failed to delete contract');
-      }
-    } catch (err) {
-      toast.error('Failed to delete contract');
-    }
-  };
-
-  const generateToken = async (contractId: string) => {
-    try {
-      const res = await fetch('/api/admin/tokens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success('Token generated');
-        loadContracts();
-        return data.token;
-      } else {
-        toast.error('Failed to generate token');
-      }
-    } catch (err) {
-      toast.error('Failed to generate token');
-    }
-    return null;
-  };
-
-  const copyTokenLink = (token: string) => {
-    const link = `${window.location.origin}${window.location.pathname}#token=${token}`;
-    navigator.clipboard.writeText(link);
-    toast.success(t('admin.copied', locale));
-  };
-
-  const seedRequirements = async () => {
-    try {
-      const res = await fetch('/api/admin/seed', { method: 'POST' });
-      if (res.ok) {
-        toast.success('Photo requirements seeded');
-      } else {
-        toast.error('Failed to seed requirements');
-      }
-    } catch (err) {
-      toast.error('Failed to seed requirements');
-    }
-  };
-
-  const bulkUpload = async (file: File) => {
-    setBulkUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/admin/bulk-upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(`Created ${data.created} contracts`);
-        if (data.errors?.length) toast.warning(`${data.errors.length} rows skipped`);
-        setShowBulkUpload(false);
-        loadContracts();
-      } else {
-        toast.error(data.error || 'Bulk upload failed');
-      }
-    } catch (err) {
-      toast.error('Bulk upload failed');
-    }
-    setBulkUploading(false);
-  };
-
-  // Customer upload
-  const uploadMedia = async (requirementId: string, file: File, mediaType: 'photo' | 'video', duration?: number) => {
-    setUploadingItem(requirementId);
-    try {
-      const formData = new FormData();
-      formData.append('token', tokenValue);
-      formData.append('media', file);
-      formData.append('requirementId', requirementId);
-      formData.append('mediaType', mediaType);
-      if (duration) formData.append('duration', String(duration));
-
-      const res = await fetch('/api/photos/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(t('checklist.uploadSuccess', locale));
-        loadChecklist();
-      } else {
-        toast.error(data.error || t('checklist.uploadError', locale));
-      }
-    } catch (err) {
-      toast.error(t('checklist.uploadError', locale));
-    }
-    setUploadingItem(null);
-  };
-
-  const handleSubmit = async () => {
-    try {
-      const res = await fetch('/api/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tokenValue }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMode('completed');
-        setContract(data.contract);
-      } else {
-        if (data.code === 'incomplete') {
-          toast.error(data.error);
-        } else {
-          toast.error(data.error || 'Failed to submit');
-        }
-      }
-    } catch (err) {
-      toast.error('Failed to submit');
-    }
-  };
-
-  // Filter contracts
-  const filteredContracts = contracts.filter(c => {
-    const matchesSearch = !searchTerm ||
-      c.contractNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.vehiclePlate.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const stats = {
-    total: contracts.length,
-    pending: contracts.filter(c => c.status === 'pending').length,
-    inProgress: contracts.filter(c => c.status === 'in_progress').length,
-    completed: contracts.filter(c => c.status === 'completed').length,
-  };
-
-  const allRequiredCompleted = checklist
-    .filter(r => r.required)
-    .every(r => (r.submissions?.length || 0) > 0);
-
-  const isRTL = RTL_LOCALES.includes(locale);
-
-  // Get requirement icon
-  const getReqIcon = (iconName?: string | null) => {
-    if (!iconName) return <Camera className="w-5 h-5" />;
-    return ICON_MAP[iconName] || <Camera className="w-5 h-5" />;
-  };
-
-  // Get requirement label
-  const getReqLabel = (req: PhotoRequirement) => {
-    if (locale === 'en') return req.labelEn || req.label;
-    return getPhotoLabel(req.key, locale);
-  };
-
-  // Get total media for a requirement
-  const getTotalMedia = (req: PhotoRequirement) => {
-    return (req.submissions?.length || 0);
-  };
-
-  // ==================== RENDER ====================
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#FFCC00]" />
-      </div>
-    );
-  }
-
-  // ==================== COMPLETED SCREEN ====================
-  if (mode === 'completed') {
-    return (
-      <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] flex flex-col items-center justify-center p-6 ${isRTL ? 'rtl' : ''}`}>
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', duration: 0.5 }}>
-          <div className="w-20 h-20 rounded-full bg-[#FFCC00] flex items-center justify-center mb-6">
-            <CheckCircle2 className="w-10 h-10 text-[#1a1a1a]" />
-          </div>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-          <h1 className="text-3xl font-bold text-[#FFCC00] mb-2">{t('completed.title', locale)}</h1>
-          <p className="text-gray-300 text-center mb-4">{t('completed.subtitle', locale)}</p>
-          {contract && (
-            <Card className="hertz-card max-w-md w-full mb-6">
-              <CardContent className="p-6 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">{t('completed.contractNumber', locale)}</span>
-                  <span className="text-[#FFCC00] font-semibold">{contract.contractNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">{t('admin.customerName', locale)}</span>
-                  <span className="text-white">{contract.customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">{t('admin.vehiclePlate', locale)}</span>
-                  <span className="text-white">{contract.vehiclePlate}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">{t('admin.vehicleModel', locale)}</span>
-                  <span className="text-white">{contract.vehicleModel}</span>
-                </div>
-                {contract.vehicleColor && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">{t('admin.vehicleColor', locale)}</span>
-                    <span className="text-white">{contract.vehicleColor}</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-          <p className="text-gray-300 text-center">{t('completed.thankYou', locale)}</p>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ==================== CUSTOMER CHECK-IN ====================
-  if (mode === 'customer') {
-    // Language selection screen
-    if (showLanguageSelect && !tokenError) {
-      return (
-        <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] flex flex-col items-center justify-center p-6 ${isRTL ? 'rtl' : ''}`}>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="w-16 h-16 rounded-full bg-[#FFCC00] flex items-center justify-center mb-4">
-              <Globe className="w-8 h-8 text-[#1a1a1a]" />
-            </div>
-            <h1 className="text-2xl font-bold text-[#FFCC00] mb-2 text-center">{t('landing.title', locale)}</h1>
-            <p className="text-gray-300 text-center mb-6">{t('landing.selectLanguage', locale)}</p>
-
-            <div className="max-w-md w-full grid grid-cols-2 gap-2 mb-6">
-              {Object.entries(LOCALES).map(([code, name]) => (
-                <Button
-                  key={code}
-                  variant={locale === code ? 'default' : 'outline'}
-                  className={locale === code
-                    ? 'hertz-btn-gold text-sm'
-                    : 'border-gray-600 text-gray-300 hover:border-[#FFCC00] hover:text-[#FFCC00] text-sm'
-                  }
-                  onClick={() => setLocale(code as Locale)}
-                >
-                  {name}
-                </Button>
-              ))}
-            </div>
-
-            <Button
-              className="hertz-btn-gold w-full max-w-md text-lg py-3"
-              onClick={() => setShowLanguageSelect(false)}
-            >
-              {t('landing.startCheckin', locale)}
-              <ChevronRight className="w-5 h-5 ml-2" />
-            </Button>
-          </motion.div>
-        </div>
-      );
-    }
-
-    // Error screens
-    if (tokenError) {
-      return (
-        <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] flex flex-col items-center justify-center p-6 ${isRTL ? 'rtl' : ''}`}>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
-              {tokenErrorCode === 'expired' ? <Clock className="w-8 h-8 text-red-400" /> :
-               tokenErrorCode === 'used' ? <CheckCircle2 className="w-8 h-8 text-green-400" /> :
-               <AlertCircle className="w-8 h-8 text-red-400" />}
-            </div>
-            <h1 className="text-2xl font-bold mb-2 text-center">
-              {tokenErrorCode === 'expired' ? t('landing.expired', locale) :
-               tokenErrorCode === 'used' ? t('landing.used', locale) :
-               t('landing.connectionError', locale)}
-            </h1>
-            {contract && (
-              <Card className="hertz-card max-w-md w-full mt-4">
-                <CardContent className="p-4">
-                  <p className="text-gray-400">{t('admin.contractNumber', locale)}: <span className="text-[#FFCC00]">{contract.contractNumber}</span></p>
-                  <p className="text-gray-400">{t('admin.customerName', locale)}: <span className="text-white">{contract.customerName}</span></p>
-                </CardContent>
-              </Card>
-            )}
-            <Button variant="outline" className="mt-6 border-gray-600 text-gray-300" onClick={() => { setMode('admin'); window.location.hash = ''; }}>
-              {t('common.back', locale)}
-            </Button>
-          </motion.div>
-        </div>
-      );
-    }
-
-    // Main checklist view
-    return (
-      <div className={`min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525] ${isRTL ? 'rtl' : ''}`}>
-        {/* Header */}
-        <div className="bg-[#FFCC00] px-4 py-3">
-          <div className="max-w-lg mx-auto flex items-center justify-between">
-            <div>
-              <h1 className="text-[#1a1a1a] font-bold text-lg">{t('app.title', locale)}</h1>
-              <p className="text-[#1a1a1a]/70 text-sm">{t('app.subtitle', locale)}</p>
-            </div>
-            <Button variant="ghost" size="sm" className="text-[#1a1a1a]" onClick={() => setShowLanguageSelect(true)}>
-              <Globe className="w-4 h-4 mr-1" />
-              {LOCALES[locale]}
-            </Button>
-          </div>
-        </div>
-
-        {/* Vehicle Info */}
-        {contract && (
-          <div className="max-w-lg mx-auto px-4 mt-4">
-            <Card className="hertz-card">
-              <CardContent className="p-4">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-400 text-xs">{t('admin.contractNumber', locale)}</span>
-                    <p className="text-[#FFCC00] font-semibold">{contract.contractNumber}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 text-xs">{t('admin.customerName', locale)}</span>
-                    <p className="text-white">{contract.customerName}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 text-xs">{t('admin.vehiclePlate', locale)}</span>
-                    <p className="text-white">{contract.vehiclePlate}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 text-xs">{t('admin.vehicleModel', locale)}</span>
-                    <p className="text-white">{contract.vehicleModel}</p>
-                  </div>
-                  {contract.vehicleColor && (
-                    <div className="col-span-2">
-                      <span className="text-gray-400 text-xs">{t('admin.vehicleColor', locale)}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded-full border border-gray-400" style={{ backgroundColor: contract.vehicleColor.toLowerCase() }} />
-                        <p className="text-white">{contract.vehicleColor}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Car Diagram */}
-        {contract && (
-          <div className="max-w-lg mx-auto px-4 mt-4">
-            <Card className="hertz-card">
-              <CardContent className="p-4">
-                <p className="text-gray-300 text-sm mb-3 text-center">{t('checklist.title', locale)}</p>
-                <CarDiagram
-                  checklist={checklist}
-                  locale={locale}
-                  onSelect={(key) => {
-                    const req = checklist.find(r => r.key === key);
-                    if (req) setSelectedRequirement(req.id);
-                  }}
-                  getReqLabel={getReqLabel}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Checklist Items */}
-        <div className="max-w-lg mx-auto px-4 mt-4 space-y-3 pb-20">
-          <AnimatePresence>
-            {checklist.map((req) => (
-              <motion.div
-                key={req.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ delay: req.orderIndex * 0.05 }}
-              >
-                <Card className={`hertz-card ${selectedRequirement === req.id ? 'ring-2 ring-[#FFCC00]' : ''}`}
-                  onClick={() => setSelectedRequirement(req.id)}>
-                  <CardContent className="p-4">
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        {getReqIcon(req.icon)}
-                        <span className="text-white font-medium">{getReqLabel(req)}</span>
-                        {req.required ? (
-                          <Badge variant="outline" className="border-[#FFCC00]/50 text-[#FFCC00] text-xs">{t('checklist.required', locale)}</Badge>
-                        ) : (
-                          <Badge variant="outline" className="border-gray-500 text-gray-400 text-xs">{t('checklist.optional', locale)}</Badge>
-                        )}
-                      </div>
-                      {(req.submissions?.length || 0) > 0 && (
-                        <CheckCircle2 className="w-5 h-5 text-green-400" />
-                      )}
-                    </div>
-
-                    {/* Description */}
-                    {req.description && (
-                      <p className="text-gray-400 text-xs mb-3">{locale === 'en' ? (req.description || '') : req.description}</p>
-                    )}
-
-                    {/* Photo/Video Mode Toggle */}
-                    {req.allowVideo && (req.submissions?.length || 0) < 10 && (
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="text-gray-400 text-xs">{t('video.photoMode', locale)}</span>
-                        <Switch
-                          checked={mediaModes[req.id] === 'video'}
-                          onCheckedChange={(checked) =>
-                            setMediaModes(prev => ({ ...prev, [req.id]: checked ? 'video' : 'photo' }))
-                          }
-                          className="data-[state=checked]:bg-[#FFCC00]"
-                        />
-                        <span className="text-gray-400 text-xs">{t('video.videoMode', locale)}</span>
-                      </div>
-                    )}
-
-                    {/* Upload Buttons */}
-                    {(req.submissions?.length || 0) < 10 && (
-                      <div className="flex gap-2 mb-3">
-                        {mediaModes[req.id] === 'video' ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-[#FFCC00]/30 text-[#FFCC00] hover:bg-[#FFCC00]/10"
-                              disabled={uploadingItem === req.id}
-                              onClick={() => {
-                                const input = fileInputRefs.current[req.id + '_video'];
-                                if (input) {
-                                  input.setAttribute('accept', 'video/mp4,video/webm,video/quicktime,video/avi');
-                                  input.click();
-                                }
-                              }}
-                            >
-                              {uploadingItem === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
-                              <span className="ml-1">{t('video.record', locale)}</span>
-                            </Button>
-                            <span className="text-gray-400 text-xs flex items-center">
-                              <Info className="w-3 h-3 mr-1" />
-                              {t('video.maxDuration', locale)}
-                            </span>
-                            <input
-                              ref={(el) => { fileInputRefs.current[req.id + '_video'] = el; }}
-                              type="file"
-                              accept="video/mp4,video/webm,video/quicktime,video/avi"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) uploadMedia(req.id, file, 'video');
-                                e.target.value = '';
-                              }}
-                            />
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-[#FFCC00]/30 text-[#FFCC00] hover:bg-[#FFCC00]/10"
-                              disabled={uploadingItem === req.id}
-                              onClick={() => {
-                                const input = fileInputRefs.current[req.id + '_photo'];
-                                if (input) {
-                                  input.setAttribute('accept', 'image/jpeg,image/png,image/webp,image/heic');
-                                  input.click();
-                                }
-                              }}
-                            >
-                              {uploadingItem === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                              <span className="ml-1">{t('video.takePhoto', locale)}</span>
-                            </Button>
-                            <input
-                              ref={(el) => { fileInputRefs.current[req.id + '_photo'] = el; }}
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp,image/heic"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) uploadMedia(req.id, file, 'photo');
-                                e.target.value = '';
-                              }}
-                            />
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Existing submissions preview */}
-                    {req.submissions && req.submissions.length > 0 && (
-                      <div className="flex gap-2 overflow-x-auto pb-1">
-                        {req.submissions.map((sub) => (
-                          <div key={sub.id} className="relative flex-shrink-0">
-                            {sub.mediaType === 'video' ? (
-                              <div className="w-20 h-20 rounded-lg bg-gray-800 border border-[#FFCC00]/30 flex items-center justify-center video-thumbnail">
-                                <Video className="w-6 h-6 text-[#FFCC00]" />
-                                <Play className="w-4 h-4 text-white absolute z-10" />
-                                {sub.duration && (
-                                  <Badge className="absolute bottom-1 right-1 bg-[#1a1a1a] text-[#FFCC00] text-xs z-10">
-                                    {sub.duration}{t('video.seconds', locale)}
-                                  </Badge>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="w-20 h-20 rounded-lg bg-gray-800 border border-[#FFCC00]/30 flex items-center justify-center">
-                                <Camera className="w-6 h-6 text-[#FFCC00]" />
-                              </div>
-                            )}
-                            <Badge className="absolute top-1 left-1 bg-[#1a1a1a] text-xs z-10">
-                              {sub.mediaType === 'video' ? 'V' : 'P'}
-                            </Badge>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Count summary */}
-                    <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-                      <span>{(req.photoCount || 0)} photos, {(req.videoCount || 0)} videos</span>
-                      <span>({getTotalMedia(req)}/10 max)</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {/* Submit Button */}
-        {contract && accessToken && !accessToken.usedAt && (
-          <div className="fixed bottom-0 left-0 right-0 bg-[#1a1a1a]/95 backdrop-blur border-t border-[#FFCC00]/20 p-4">
-            <div className="max-w-lg mx-auto">
-              <Button
-                className="hertz-btn-gold w-full py-3 text-lg"
-                disabled={!allRequiredCompleted}
-                onClick={handleSubmit}
-              >
-                <Send className="w-5 h-5 mr-2" />
-                {t('checklist.submit', locale)}
-              </Button>
-              {!allRequiredCompleted && (
-                <p className="text-gray-400 text-xs mt-2 text-center">{t('checklist.allRequired', locale)}</p>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ==================== ADMIN DASHBOARD ====================
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-[#1a1a1a] to-[#252525]">
-      {/* Header */}
-      <div className="bg-[#FFCC00] px-4 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Shield className="w-8 h-8 text-[#1a1a1a]" />
-            <div>
-              <h1 className="text-[#1a1a1a] font-bold text-xl">{t('admin.title', locale)}</h1>
-              <p className="text-[#1a1a1a]/70 text-sm">Hertz Malta Vehicle Check-in Portal</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="text-[#1a1a1a]" onClick={() => seedRequirements()}>
-              <RefreshCw className="w-4 h-4 mr-1" />
-              Seed
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="max-w-6xl mx-auto px-4 mt-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="hertz-card">
-            <CardContent className="p-4 text-center">
-              <p className="text-gray-400 text-xs">{t('admin.totalContracts', locale)}</p>
-              <p className="text-[#FFCC00] font-bold text-2xl">{stats.total}</p>
-            </CardContent>
-          </Card>
-          <Card className="hertz-card">
-            <CardContent className="p-4 text-center">
-              <p className="text-gray-400 text-xs">{t('admin.pending', locale)}</p>
-              <p className="text-yellow-400 font-bold text-2xl">{stats.pending}</p>
-            </CardContent>
-          </Card>
-          <Card className="hertz-card">
-            <CardContent className="p-4 text-center">
-              <p className="text-gray-400 text-xs">{t('admin.inProgress', locale)}</p>
-              <p className="text-blue-400 font-bold text-2xl">{stats.inProgress}</p>
-            </CardContent>
-          </Card>
-          <Card className="hertz-card">
-            <CardContent className="p-4 text-center">
-              <p className="text-gray-400 text-xs">{t('admin.completed', locale)}</p>
-              <p className="text-green-400 font-bold text-2xl">{stats.completed}</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="max-w-6xl mx-auto px-4 mt-4 flex flex-wrap gap-3 items-center">
-        <div className="flex-1 min-w-[200px]">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <Input
-              placeholder={t('admin.search', locale)}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-[#333] border-gray-600 text-white placeholder-gray-500"
-            />
-          </div>
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px] bg-[#333] border-gray-600 text-white">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-[#333] border-gray-600">
-            <SelectItem value="all">{t('admin.all', locale)}</SelectItem>
-            <SelectItem value="pending">{t('admin.pending', locale)}</SelectItem>
-            <SelectItem value="in_progress">{t('admin.inProgress', locale)}</SelectItem>
-            <SelectItem value="completed">{t('admin.completed', locale)}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button className="hertz-btn-gold" onClick={() => setShowNewContract(true)}>
-          <Plus className="w-4 h-4 mr-1" />
-          {t('admin.newContract', locale)}
-        </Button>
-        <Button variant="outline" className="border-gray-600 text-gray-300 hover:border-[#FFCC00] hover:text-[#FFCC00]"
-          onClick={() => setShowBulkUpload(true)}>
-          <FileUp className="w-4 h-4 mr-1" />
-          {t('admin.bulkUpload', locale)}
-        </Button>
-      </div>
-
-      {/* Contracts Table */}
-      <div className="max-w-6xl mx-auto px-4 mt-4">
-        {filteredContracts.length === 0 ? (
-          <Card className="hertz-card">
-            <CardContent className="p-8 text-center">
-              <p className="text-gray-400">{t('admin.noContracts', locale)}</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <ScrollArea className="max-h-[600px] custom-scrollbar">
-            <div className="space-y-2">
-              {filteredContracts.map((c) => (
-                <motion.div key={c.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <Card className="hertz-card hover:hertz-glow transition-all">
-                    <CardContent className="p-4">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                        {/* Left: Contract info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[#FFCC00] font-semibold">{c.contractNumber}</span>
-                            <StatusBadge status={c.status} locale={locale} />
-                          </div>
-                          <div className="text-sm text-gray-300 grid grid-cols-2 gap-x-4 gap-y-1">
-                            <span>{c.customerName}</span>
-                            <span>{c.vehiclePlate}</span>
-                            <span className="text-gray-400">{c.vehicleModel}</span>
-                            {c.vehicleColor && <span className="text-gray-400">{c.vehicleColor}</span>}
-                          </div>
-                          {/* Token info */}
-                          {c.tokens && c.tokens.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {c.tokens.map((tk) => (
-                                <div key={tk.id} className="flex items-center gap-2 text-xs">
-                                  <Link className="w-3 h-3 text-gray-400" />
-                                  <code className="text-gray-400 bg-[#333] px-2 py-0.5 rounded select-all">{tk.token}</code>
-                                  <span className="text-gray-500">
-                                    {t('admin.tokenExpiry', locale)}: {new Date(tk.expiresAt).toLocaleString()}
-                                  </span>
-                                  {tk.usedAt && <Badge className="bg-green-500/20 text-green-400 text-xs">Used</Badge>}
-                                  <Button variant="ghost" size="sm" className="h-6 text-gray-400 hover:text-[#FFCC00]"
-                                    onClick={() => copyTokenLink(tk.token)}>
-                                    <Copy className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {/* Media count */}
-                          {c.media && c.media.length > 0 && (
-                            <div className="mt-1 text-xs text-gray-400">
-                              <Eye className="w-3 h-3 inline mr-1" />
-                              {c.media.length} {t('admin.mediaCount', locale)}
-                              ({c.media.filter(m => m.mediaType === 'photo').length} photos, {c.media.filter(m => m.mediaType === 'video').length} videos)
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Right: Actions */}
-                        <div className="flex gap-1 flex-shrink-0">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" className="text-gray-400 hover:text-[#FFCC00]"
-                                  onClick={() => generateToken(c.id)}>
-                                  <QrCode className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>{t('admin.generateToken', locale)}</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-blue-400"
-                            onClick={() => { setEditingContract(c); setShowEditContract(true); }}>
-                            <Edit3 className="w-4 h-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" className="text-gray-400 hover:text-red-400">
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent className="bg-[#252525] border-gray-600 text-white">
-                              <AlertDialogTitle>{t('admin.deleteConfirmTitle', locale)}</AlertDialogTitle>
-                              <AlertDialogDescription className="text-gray-400">
-                                {t('admin.deleteConfirm', locale)}
-                              </AlertDialogDescription>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel className="bg-[#333] text-gray-300 border-gray-600">{t('admin.cancel', locale)}</AlertDialogCancel>
-                                <AlertDialogAction className="bg-red-500 text-white" onClick={() => deleteContract(c.id)}>
-                                  {t('admin.delete', locale)}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          </ScrollArea>
-        )}
-      </div>
-
-      {/* New Contract Dialog */}
-      <Dialog open={showNewContract} onOpenChange={setShowNewContract}>
-        <DialogContent className="bg-[#252525] border-gray-600 text-white max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-[#FFCC00]">{t('admin.newContract', locale)}</DialogTitle>
-            <DialogDescription className="text-gray-400">Create a new rental contract with auto-generated token</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            <div>
-              <Label className="text-gray-300">{t('admin.contractNumber', locale)} *</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.contractNumber}
-                onChange={(e) => setNewContract(p => ({ ...p, contractNumber: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-gray-300">{t('admin.customerName', locale)} *</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.customerName}
-                onChange={(e) => setNewContract(p => ({ ...p, customerName: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-gray-300">{t('admin.customerEmail', locale)}</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" type="email" value={newContract.customerEmail}
-                onChange={(e) => setNewContract(p => ({ ...p, customerEmail: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-gray-300">{t('admin.customerPhone', locale)}</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" type="tel" value={newContract.customerPhone}
-                onChange={(e) => setNewContract(p => ({ ...p, customerPhone: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-gray-300">{t('admin.vehiclePlate', locale)} *</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.vehiclePlate}
-                onChange={(e) => setNewContract(p => ({ ...p, vehiclePlate: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-gray-300">{t('admin.vehicleModel', locale)} *</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.vehicleModel}
-                onChange={(e) => setNewContract(p => ({ ...p, vehicleModel: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-gray-300">{t('admin.vehicleColor', locale)}</Label>
-              <Input className="bg-[#333] border-gray-600 text-white" value={newContract.vehicleColor}
-                onChange={(e) => setNewContract(p => ({ ...p, vehicleColor: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setShowNewContract(false)}>
-              {t('admin.cancel', locale)}
-            </Button>
-            <Button className="hertz-btn-gold" onClick={createContract}>
-              {t('admin.create', locale)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Contract Dialog */}
-      <Dialog open={showEditContract} onOpenChange={setShowEditContract}>
-        <DialogContent className="bg-[#252525] border-gray-600 text-white max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-[#FFCC00]">{t('admin.edit', locale)}</DialogTitle>
-          </DialogHeader>
-          {editingContract && (
-            <div className="space-y-3 py-4">
-              <div>
-                <Label className="text-gray-300">{t('admin.contractNumber', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.contractNumber}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, contractNumber: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.customerName', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.customerName}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, customerName: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.customerEmail', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.customerEmail || ''}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, customerEmail: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.customerPhone', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.customerPhone || ''}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, customerPhone: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.vehiclePlate', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.vehiclePlate}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, vehiclePlate: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.vehicleModel', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.vehicleModel}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, vehicleModel: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.vehicleColor', locale)}</Label>
-                <Input className="bg-[#333] border-gray-600 text-white" value={editingContract.vehicleColor || ''}
-                  onChange={(e) => setEditingContract(p => p ? ({ ...p, vehicleColor: e.target.value }) : p)} />
-              </div>
-              <div>
-                <Label className="text-gray-300">{t('admin.status', locale)}</Label>
-                <Select value={editingContract.status} onValueChange={(v) => setEditingContract(p => p ? ({ ...p, status: v }) : p)}>
-                  <SelectTrigger className="bg-[#333] border-gray-600 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#333] border-gray-600">
-                    <SelectItem value="pending">{t('admin.pending', locale)}</SelectItem>
-                    <SelectItem value="in_progress">{t('admin.inProgress', locale)}</SelectItem>
-                    <SelectItem value="completed">{t('admin.completed', locale)}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setShowEditContract(false)}>
-              {t('admin.cancel', locale)}
-            </Button>
-            <Button className="hertz-btn-gold" onClick={updateContract}>
-              {t('admin.save', locale)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Bulk Upload Dialog */}
-      <Dialog open={showBulkUpload} onOpenChange={setShowBulkUpload}>
-        <DialogContent className="bg-[#252525] border-gray-600 text-white">
-          <DialogHeader>
-            <DialogTitle className="text-[#FFCC00]">{t('admin.bulkUpload', locale)}</DialogTitle>
-            <DialogDescription className="text-gray-400">Upload an Excel file (.xlsx) with contract data</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-[#FFCC00] transition-colors">
-              <FileUp className="w-12 h-12 text-gray-400 mb-3 mx-auto" />
-              <p className="text-gray-300 mb-2">{t('admin.uploadExcel', locale)}</p>
-              <Input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="bg-[#333] border-gray-600 text-white"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) bulkUpload(file);
-                }}
-                disabled={bulkUploading}
-              />
-              {bulkUploading && (
-                <div className="mt-4 flex items-center justify-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#FFCC00]" />
-                  <span className="text-gray-300">Processing...</span>
-                </div>
-              )}
-            </div>
-            <p className="text-gray-400 text-xs mt-3">
-              Supported columns: Rental/Contract, Customer/Name, Email, Phone, Plate/License, Model/Car, Color
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="border-gray-600 text-gray-300" onClick={() => setShowBulkUpload(false)}>
-              {t('admin.close', locale)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Footer */}
-      <div className="mt-auto py-6 text-center text-gray-500 text-xs">
-        Hertz Malta Vehicle Check-in Portal — Admin Dashboard
-      </div>
-    </div>
-  );
+}, []);
+useEffect(() => {
+const hash = window.location.hash;
+if (hash.startsWith('#token=')) { const tk = hash.replace('#token=', ''); setToken(tk); setMode('customer'); validateToken(tk); }
+else { setMode('admin'); loadContracts(); }
+}, []);
+const validateToken = async (tk: string) => {
+try {
+setError('');
+const res = await fetch('/api/token/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: tk }) });
+const data = await res.json();
+if (!res.ok) { setError(data.error || 'Invalid token'); if (res.status === 410) setMode('completed'); return; }
+setContract(data.contract); setChecklist(data.photoChecklist);
+const counts: Record<string, number> = {};
+data.photoChecklist.forEach((item: ChecklistItem) => { counts[item.key] = item.photoCount; });
+setPhotoCounts(counts);
+} catch { setError(t(locale, 'landing.connectionError')); }
+};
+const openCamera = (key: string) => {
+const count = photoCounts[key] || 0;
+if (count >= MAX_PHOTOS) { setError('Massimo ' + MAX_PHOTOS + ' foto per questo angolo.'); return; }
+const item = checklist.find(c => c.key === key);
+if (!item) return;
+setActiveKey(key); setError('');
+if (fileInputRef.current) fileInputRef.current.value = '';
+setTimeout(() => fileInputRef.current?.click(), 150);
+};
+const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+const files = e.target.files;
+if (!files || !files.length || !activeKey || !contract) return;
+const item = checklist.find(c => c.key === activeKey);
+if (!item) return;
+const remaining = MAX_PHOTOS - (photoCounts[activeKey] || 0);
+const toUpload = Array.from(files).slice(0, remaining);
+for (const file of toUpload) {
+setUploadingPhoto(activeKey);
+try {
+const fd = new FormData();
+fd.append('token', token); fd.append('photo', file); fd.append('requirementId', item.id);
+const res = await fetch('/api/photos/upload', { method: 'POST', body: fd });
+const data = await res.json();
+if (!res.ok) throw new Error(data.error || 'Upload failed');
+const objectUrl = URL.createObjectURL(file);
+objectUrlsRef.current.push(objectUrl);
+setLocalPreviews(p => ({ ...p, [activeKey!]: [...(p[activeKey!] || []), objectUrl] }));
+setPhotoCounts(p => ({ ...p, [activeKey!]: (p[activeKey!] || 0) + 1 }));
+setChecklist(p => p.map(c => c.key === activeKey ? { ...c, completed: true, photoCount: c.photoCount + 1 } : c));
+} catch (err: unknown) { setError(err instanceof Error ? err.message : 'Upload failed'); }
+finally { setUploadingPhoto(null); }
 }
-
-// ==================== Sub-components ====================
-
-function StatusBadge({ status, locale }: { status: string; locale: Locale }) {
-  const config: Record<string, { label: string; cls: string }> = {
-    pending: { label: t('admin.pending', locale), cls: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
-    in_progress: { label: t('admin.inProgress', locale), cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-    completed: { label: t('admin.completed', locale), cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
-  };
-  const c = config[status] || { label: status, cls: 'bg-gray-500/20 text-gray-400 border-gray-500/30' };
-  return <Badge variant="outline" className={c.cls}>{c.label}</Badge>;
+if (fileInputRef.current) fileInputRef.current.value = '';
+};
+const totalPhotos = Object.values(photoCounts).reduce((s, c) => s + c, 0);
+const handleSubmit = async () => {
+if (totalPhotos === 0 || isSubmitting) return;
+setIsSubmitting(true); setError('');
+try {
+const res = await fetch('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+const data = await res.json();
+if (!res.ok) throw new Error(data.error || 'Submit failed');
+setMode('completed');
+} catch (err: unknown) { setError(err instanceof Error ? err.message : 'Submit failed'); }
+finally { setIsSubmitting(false); }
+};
+const loadContracts = async () => { try { const r = await fetch('/api/admin/contracts'); if (r.ok) setContracts((await r.json()).contracts || []); } catch {} };
+const handleCreateContract = async (e: React.FormEvent) => {
+e.preventDefault();
+try {
+const r = await fetch('/api/admin/contracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(createForm) });
+ const d = await r.json(); if (!r.ok) throw new Error(d.error);
+setShowCreate(false); setCreateForm({ contractNumber: '', customerName: '', customerEmail: '', customerPhone: '', vehiclePlate: '', vehicleModel: '', vehicleColor: '' });
+if (d.accessToken) setGeneratedToken(d.accessToken); loadContracts();
+} catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed'); }
+};
+const handleGenerateToken = async (cid: string) => {
+try { const r = await fetch('/api/admin/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contractId: cid }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error); setGeneratedToken(d.accessToken); }
+catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed'); }
+};
+const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+const file = e.target.files?.[0]; if (!file) return; setUploading(true); setBulkResult(null);
+try { const fd = new FormData(); fd.append('file', file); const r = await fetch('/api/admin/bulk-upload', { method: 'POST', body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error); setBulkResult(d); loadContracts(); }
+catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed'); }
+finally { setUploading(false); if (e.target) e.target.value = ''; }
+};
+const copyToClip = (text: string, id: string) => { navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(''), 2000); };
+const statusBadge = (s: string) => s === 'completed' ? 'bg-green-100 text-green-800' : s === 'in_progress' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600';
+const filteredContracts = useCallback(() => {
+let result = contracts;
+if (statusFilter !== 'all') {
+result = result.filter(c => c.status === statusFilter);
 }
-
-function CarDiagram({
-  checklist,
-  locale,
-  onSelect,
-  getReqLabel,
-}: {
-  checklist: PhotoRequirement[];
-  locale: Locale;
-  onSelect: (key: string) => void;
-  getReqLabel: (req: PhotoRequirement) => string;
-}) {
-  // Get counts per key
-  const counts: Record<string, number> = {};
-  const completed: Record<string, boolean> = {};
-  checklist.forEach(r => {
-    counts[r.key] = (r.submissions?.length || 0);
-    completed[r.key] = (r.submissions?.length || 0) > 0;
-  });
-
-  return (
-    <svg viewBox="0 0 300 180" className="w-full max-w-xs mx-auto">
-      {/* Car body */}
-      <rect x="60" y="50" width="180" height="70" rx="20" fill="#333" stroke="#FFCC00" strokeWidth="1.5" />
-
-      {/* Car roof */}
-      <path d="M90 50 Q150 20 210 50" fill="#333" stroke="#FFCC00" strokeWidth="1.5" />
-
-      {/* Wheels */}
-      <circle cx="100" cy="120" r="18" fill="#444" stroke="#FFCC00" strokeWidth="1.5" />
-      <circle cx="100" cy="120" r="8" fill="#333" />
-      <circle cx="200" cy="120" r="18" fill="#444" stroke="#FFCC00" strokeWidth="1.5" />
-      <circle cx="200" cy="120" r="8" fill="#333" />
-
-      {/* Interior area */}
-      <rect x="95" y="32" width="110" height="16" rx="4" fill="transparent" stroke="#FFCC00" strokeWidth="0.5" />
-
-      {/* Clickable zones */}
-      {/* Front zone */}
-      <g className="car-zone" onClick={() => onSelect('front')}>
-        <rect x="60" y="50" width="35" height="70" rx="10" fill={completed['front'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['front'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
-        <text x="77" y="90" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('front', locale)}</text>
-        {counts['front'] > 0 && (
-          <g>
-            <circle cx="77" cy="62" r="8" fill={completed['front'] ? '#4CAF50' : '#FFCC00'} />
-            <text x="77" y="65" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['front']}</text>
-          </g>
-        )}
-      </g>
-
-      {/* Passenger side */}
-      <g className="car-zone" onClick={() => onSelect('passenger_side')}>
-        <rect x="95" y="70" width="110" height="25" rx="4" fill={completed['passenger_side'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['passenger_side'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
-        <text x="150" y="87" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('passenger_side', locale)}</text>
-        {counts['passenger_side'] > 0 && (
-          <g>
-            <circle cx="130" cy="73" r="8" fill={completed['passenger_side'] ? '#4CAF50' : '#FFCC00'} />
-            <text x="130" y="76" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['passenger_side']}</text>
-          </g>
-        )}
-      </g>
-
-      {/* Back zone */}
-      <g className="car-zone" onClick={() => onSelect('back')}>
-        <rect x="205" y="50" width="35" height="70" rx="10" fill={completed['back'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['back'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
-        <text x="222" y="90" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('back', locale)}</text>
-        {counts['back'] > 0 && (
-          <g>
-            <circle cx="222" cy="62" r="8" fill={completed['back'] ? '#4CAF50' : '#FFCC00'} />
-            <text x="222" y="65" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['back']}</text>
-          </g>
-        )}
-      </g>
-
-      {/* Driver side */}
-      <g className="car-zone" onClick={() => onSelect('driver_side')}>
-        <rect x="95" y="45" width="110" height="25" rx="4" fill={completed['driver_side'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['driver_side'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
-        <text x="150" y="62" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('driver_side', locale)}</text>
-        {counts['driver_side'] > 0 && (
-          <g>
-            <circle cx="170" cy="48" r="8" fill={completed['driver_side'] ? '#4CAF50' : '#FFCC00'} />
-            <text x="170" y="51" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['driver_side']}</text>
-          </g>
-        )}
-      </g>
-
-      {/* Interior zone */}
-      <g className="car-zone" onClick={() => onSelect('interior')}>
-        <rect x="95" y="30" width="110" height="16" rx="4" fill={completed['interior'] ? '#4CAF50' : '#FFCC00'} fillOpacity="0.3" stroke={completed['interior'] ? '#4CAF50' : '#FFCC00'} strokeWidth="1" />
-        <text x="150" y="41" textAnchor="middle" fill="white" fontSize="8">{getPhotoLabel('interior', locale)}</text>
-        {counts['interior'] > 0 && (
-          <g>
-            <circle cx="112" cy="34" r="8" fill={completed['interior'] ? '#4CAF50' : '#FFCC00'} />
-            <text x="112" y="37" textAnchor="middle" fill="#1a1a1a" fontSize="8" fontWeight="bold">{counts['interior']}</text>
-          </g>
-        )}
-      </g>
-    </svg>
-  );
+if (searchQuery.trim()) {
+const q = searchQuery.toLowerCase().trim();
+result = result.filter(c =>
+c.contractNumber.toLowerCase().includes(q) ||
+c.customerName.toLowerCase().includes(q) ||
+c.vehiclePlate.toLowerCase().includes(q) ||
+c.vehicleModel.toLowerCase().includes(q) ||
+(c.customerEmail && c.customerEmail.toLowerCase().includes(q))
+);
+}
+return result;
+}, [contracts, searchQuery, statusFilter]);
+// DELETE FUNCTIONS
+const handleDeleteContract = async (id: string) => {
+try {
+const r = await fetch('/api/admin/contracts?id=' + id, { method: 'DELETE' });
+if (!r.ok) {
+const errData = await r.json().catch(() => ({}));
+throw new Error(errData.error || 'Delete failed');
+}
+setDeleteConfirm(null);
+setSelectedContracts(prev => { const next = new Set(prev); next.delete(id); return next; });
+loadContracts();
+} catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed to delete'); }
+};
+const handleDeleteSelected = async () => {
+if (selectedContracts.size === 0) return;
+const ids = Array.from(selectedContracts);
+try {
+for (const id of ids) {
+const r = await fetch('/api/admin/contracts?id=' + id, { method: 'DELETE' });
+if (!r.ok) {
+const errData = await r.json().catch(() => ({}));
+throw new Error(errData.error || `Delete failed for ${id}`);
+}
+}
+setSelectedContracts(new Set());
+setDeleteAllConfirm(false);
+loadContracts();
+} catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed to delete'); }
+};
+const toggleSelectAll = () => {
+const filtered = filteredContracts();
+if (selectedContracts.size === filtered.length && filtered.length > 0) setSelectedContracts(new Set());
+else setSelectedContracts(new Set(filtered.map(c => c.id)));
+};
+const toggleSelect = (id: string) => {
+setSelectedContracts(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+};
+/* LOADING */
+if (mode === 'loading') return (<div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#1a1a1a' }}><div className="animate-spin h-10 w-10 border-4 border-yellow-400 border-t-transparent rounded-full" /></div>);
+/* COMPLETED */
+if (mode === 'completed') return (
+ <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 p-4">
+ <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+ <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+ <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+ </div>
+ <h1 className="text-2xl font-bold text-gray-900 mb-2">{t(locale, 'confirm.title')}</h1>
+ <p className="text-gray-600">{t(locale, 'confirm.subtitle')}</p>
+ <div className="mt-8 p-4 bg-gray-50 rounded-xl"> <p className="text-gray-500 text-xs">{t(locale, 'confirm.thanks')}</p> </div>
+ </div>
+ </div>
+);
+/* CUSTOMER */
+if (mode === 'customer') return (
+ <div className="min-h-screen bg-gray-50">
+ <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
+  <div style={{ backgroundColor: '#1a1a1a' }}>
+     <div className="max-w-lg mx-auto px-4 py-4">
+       <div className="flex items-center justify-between">
+         <div><h1 className="text-lg font-bold text-white">HERTZ MALTA</h1><p className="text-xs" style={{ color: '#FFCB05' }}>{t(locale, 'app.title')}</p></div>
+         <div className="flex items-center gap-2">
+           <LanguageSelector locale={locale} setLocale={setLocale} dark />
+           {contract && <div className="text-right"><p className="text-xs text-gray-400">{t(locale, 'confirm.contract')}</p><p className="text-sm font-semibold text-white">{contract.contractNumber}</p></div>}
+         </div>
+       </div>
+       {contract && (
+         <div className="mt-3 p-3 rounded-xl grid grid-cols-2 gap-2 text-sm" style={{ backgroundColor: 'rgba(255,203,5,0.1)', border: '1px solid rgba(255,203,5,0.2)' }}>
+           <div><span className="text-xs" style={{ color: '#FFCB05' }}>{t(locale, 'checklist.customer')}</span><p className="font-medium text-white">{contract.customerName}</p></div>
+           <div><span className="text-xs" style={{ color: '#FFCB05' }}>{t(locale, 'checklist.vehicle')}</span><p className="font-medium text-white">{contract.vehicleModel}</p></div>
+           <div><span className="text-xs" style={{ color: '#FFCB05' }}>{t(locale, 'checklist.plate')}</span><p className="font-medium text-white">{contract.vehiclePlate}</p></div>
+           {contract.vehicleColor && <div><span className="text-xs" style={{ color: '#FFCB05' }}>{t(locale, 'checklist.color')}</span><p className="font-medium text-white">{contract.vehicleColor}</p></div>}
+         </div>
+       )}
+     </div>
+   </div>
+   <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
+     {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2"><span>!</span><span className="flex-1">{error}</span><button onClick={() => setError('')} className="font-bold text-red-400 ml-2">x</button></div>}
+     <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+       <CarDiagram onSelect={openCamera} photoCounts={photoCounts} />
+     </div>
+     <div className="space-y-2">
+       {checklist.map(item => {
+         const count = photoCounts[item.key] || 0;
+         const full = count >= MAX_PHOTOS;
+         const isUploading = uploadingPhoto === item.key;
+         const previews = localPreviews[item.key] || [];
+         // Use translated label if available, fallback to label from DB
+         const translatedLabel = t(locale, 'photo.' + item.key) !== 'photo.' + item.key ? t(locale, 'photo.' + item.key) : item.label;
+         return (
+           <div key={item.id} onClick={() => !full && openCamera(item.key)} className={'bg-white rounded-xl p-3 border-2 cursor-pointer transition-all active:scale-[0.98] ' + (full ? 'border-red-200 bg-red-50/60' : count > 0 ? 'border-green-300 bg-green-50/60' : 'border-gray-200 hover:border-yellow-300')}>
+             <div className="flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                 <div className={'w-9 h-9 rounded-full flex items-center justify-center text-sm ' + (full ? 'bg-red-100' : count > 0 ? 'bg-green-100' : 'bg-gray-100')}>
+                   {isUploading ? <div className="animate-spin h-4 w-4 border-2 border-yellow-500 border-t-transparent rounded-full" /> : full ? '🔝' : count > 0 ? '✓' : '📷'}
+                 </div>
+                 <div><p className="font-semibold text-gray-800 text-sm">{translatedLabel}</p><p className="text-xs text-gray-500">{count}/{MAX_PHOTOS} foto</p></div>
+               </div>
+               <div className={'px-2.5 py-1 rounded-full text-xs font-medium ' + (full ? 'bg-red-100 text-red-700' : isUploading ? 'bg-yellow-100 text-yellow-800' : count > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500')}>
+                 {full ? t(locale, 'checklist.retake') : isUploading ? t(locale, 'checklist.uploading') : count > 0 ? t(locale, 'checklist.retake') : t(locale, 'checklist.takePhoto')}
+               </div>
+             </div>
+             {previews.length > 0 && (
+               <div className="flex gap-1.5 mt-2 overflow-x-auto pb-1">
+                 {previews.map((src, i) => <img key={i} src={src} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-gray-300" />)}
+                 {!full && <div onClick={e => { e.stopPropagation(); openCamera(item.key); }} className="w-14 h-14 rounded-lg bg-yellow-50 border-2 border-dashed border-yellow-400 flex items-center justify-center flex-shrink-0 cursor-pointer hover:bg-yellow-100"><span className="text-yellow-500 text-lg font-bold">+</span></div>}
+               </div>
+             )}
+           </div>
+         );
+       })}
+     </div>
+     {totalPhotos > 0 && (
+       <button onClick={handleSubmit} disabled={isSubmitting}
+         className="w-full py-5 rounded-2xl text-white font-extrabold text-lg tracking-wide transition-all shadow-lg shadow-green-200 hover:shadow-xl active:scale-[0.98]"
+         style={{ backgroundColor: isSubmitting ? '#9ca3af' : '#16a34a' }}>
+         {isSubmitting
+           ? <span className="flex items-center justify-center gap-2"><span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />{t(locale, 'checklist.submitting')}</span>
+           : <span>{t(locale, 'checklist.submitCheckin')}<span className="block text-sm font-normal opacity-80 mt-0.5">{totalPhotos} foto pronte</span></span>
+         }
+       </button>
+     )}
+     {totalPhotos === 0 && <p className="text-center text-xs text-gray-400">{t(locale, 'checklist.completeAll')}</p>}
+   </div>
+   <div className="h-10" />
+ </div>
+);
+/* ADMIN */
+return (
+ <div className="min-h-screen" style={{ backgroundColor: '#f5f5f0' }}>
+ <div className="px-6 py-5" style={{ backgroundColor: '#1a1a1a' }}>
+ <div className="max-w-6xl mx-auto flex items-center gap-3">
+ <div className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg" style={{ backgroundColor: '#FFCB05', color: '#1a1a1a' }}>H</div>
+ <div> <h1 className="text-xl font-bold text-white tracking-wide">HERTZ MALTA</h1> <p className="text-xs text-gray-400">{t(adminLocale, 'admin.subtitle')}</p> </div>
+ </div>
+ </div>
+ <div className="max-w-6xl mx-auto px-4 py-6">
+ <div className="grid grid-cols-4 gap-3 mb-6">
+{[
+{ label: t(adminLocale, 'admin.totalContracts'), value: contracts.length, bg: '#fff', bc: '#e5e5e5', c: '#1a1a1a' },
+{ label: t(adminLocale, 'admin.pending'), value: contracts.filter(c => c.status === 'pending').length, bg: '#fff', bc: '#e5e5e5', c: '#666' },
+{ label: t(adminLocale, 'admin.inProgress'), value: contracts.filter(c => c.status === 'in_progress').length, bg: '#FFCB05', bc: '#e6b800', c: '#1a1a1a' },
+{ label: t(adminLocale, 'admin.completed'), value: contracts.filter(c => c.status === 'completed').length, bg: '#22c55e', bc: '#16a34a', c: '#fff' },
+].map(s => (
+ <div key={s.label} className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: s.bg, border: '1px solid ' + s.bc }}>
+ <p className="text-2xl font-bold" style={{ color: s.c }}>{s.value}</p>
+ <p className="text-xs mt-1" style={{ color: s.c, opacity: 0.7 }}>{s.label}</p>
+ </div>
+))}
+ </div>
+ <div className="flex flex-wrap gap-3 mb-6">
+ <button onClick={() => setShowCreate(true)} className="text-sm font-medium px-4 py-2 rounded-lg text-white" style={{ backgroundColor: '#1a1a1a' }}>+ {t(adminLocale, 'admin.newContract')}</button>
+ <label className="cursor-pointer text-sm font-medium px-4 py-2 rounded-lg border bg-white flex items-center gap-2" style={{ borderColor: '#ccc', color: '#333' }}>
+{uploading ? t(adminLocale, 'admin.processing') : t(adminLocale, 'admin.bulkUpload')}
+ <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkUpload} className="hidden" disabled={uploading} />
+ </label>
+ <button onClick={loadContracts} className="text-sm font-medium px-4 py-2 rounded-lg border bg-white" style={{ borderColor: '#ccc', color: '#333' }}>{t(adminLocale, 'admin.refresh')}</button>
+ {selectedContracts.size > 0 && (
+ <button onClick={() => setDeleteAllConfirm(true)} className="text-sm font-medium px-4 py-2 rounded-lg bg-red-600 text-white shadow-sm hover:bg-red-700 ml-auto">
+ {t(adminLocale, 'admin.deleteSelected')} ({selectedContracts.size})
+ </button>
+ )}
+ </div>
+    {/* SEARCH BAR AND FILTER */}
+     <div className="flex flex-col sm:flex-row gap-3 mb-6">
+       <div className="relative flex-1">
+         <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+         <input
+           type="text"
+           placeholder={t(adminLocale, 'admin.searchPlaceholder')}
+           value={searchQuery}
+           onChange={e => setSearchQuery(e.target.value)}
+           className="w-full pl-10 pr-4 py-2.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+           style={{ borderColor: '#ccc' }}
+         />
+         {searchQuery && (
+           <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+           </button>
+         )}
+       </div>
+       <select
+         value={statusFilter}
+         onChange={e => setStatusFilter(e.target.value)}
+         className="px-4 py-2.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
+         style={{ borderColor: '#ccc' }}
+       >
+         <option value="all">{t(adminLocale, 'admin.allStatuses')}</option>
+         <option value="pending">Pending</option>
+         <option value="in_progress">In Progress</option>
+         <option value="completed">Completed</option>
+       </select>
+     </div>
+     {bulkResult && (
+       <div className="bg-white rounded-xl p-4 border mb-6" style={{ borderColor: '#e5e5e5' }}>
+         <h3 className="font-semibold text-gray-800 mb-2">{t(adminLocale, 'admin.uploadSuccess')}</h3>
+         <p className="text-sm text-gray-600">{bulkResult.summary.created} {t(adminLocale, 'admin.created')}, {bulkResult.summary.skipped} {t(adminLocale, 'admin.skipped')}, {bulkResult.summary.errors} {t(adminLocale, 'admin.errors')}</p>
+         <details className="mt-2"><summary className="text-xs text-gray-500 cursor-pointer">{t(adminLocale, 'admin.results')}</summary>
+           <div className="mt-2 max-h-40 overflow-y-auto text-xs space-y-1">
+             {bulkResult.results?.map((r: any, i: number) => <div key={i} className={r.status === 'error' ? 'text-red-600' : r.status === 'skipped' ? 'text-yellow-600' : 'text-green-600'}>Row {r.row}: {r.contractNumber} - {r.customerName} [{r.status}]{r.error && ' - ' + r.error}</div>)}
+           </div>
+         </details>
+         <button onClick={() => setBulkResult(null)} className="mt-2 text-xs text-gray-400">{t(adminLocale, 'admin.close')}</button>
+       </div>
+     )}
+     {showCreate && (
+       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40 p-4" onClick={() => setShowCreate(false)}>
+         <form onSubmit={handleCreateContract} onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
+           <div className="px-6 py-5 flex items-start justify-between" style={{ backgroundColor: '#1a1a1a' }}>
+             <div className="flex items-center gap-3">
+               <div className="w-9 h-9 rounded-lg flex items-center justify-center font-black text-base flex-shrink-0" style={{ backgroundColor: '#FFCB05', color: '#1a1a1a' }}>+</div>
+               <div>
+                 <h2 className="font-semibold text-white text-base">{t(adminLocale, 'admin.newContractTitle')}</h2>
+                 <p className="text-xs mt-0.5" style={{ color: '#FFCB05' }}>{t(adminLocale, 'admin.newContractDesc')}</p>
+               </div>
+             </div>
+             <button type="button" onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-white flex-shrink-0 ml-2">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+             </button>
+           </div>
+           <div className="px-6 py-5 overflow-y-auto space-y-5">
+             <div>
+               <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#e6b800' }}>{t(adminLocale, 'admin.contractDetails')}</p>
+               <div className="space-y-3">
+                 {[{ key: 'contractNumber', label: t(adminLocale, 'admin.contractNumber'), required: true },{ key: 'customerName', label: t(adminLocale, 'admin.customerName'), required: true }].map(f => (
+                   <div key={f.key}>
+                     <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}{f.required && <span style={{ color: '#e6b800' }}> *</span>}</label>
+                     <input type="text" value={(createForm as any)[f.key]} onChange={e => setCreateForm(p => ({ ...p, [f.key]: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent" required={f.required} />
+                   </div>
+                 ))}
+               </div>
+             </div>
+             <div>
+               <p className="text-xs font-semibold uppercase tracking-wide mb-2 text-gray-400">{t(adminLocale, 'admin.optionalDetails')}</p>
+               <div className="grid grid-cols-2 gap-3">
+                 {[{ key: 'vehiclePlate', label: t(adminLocale, 'admin.vehiclePlate') },{ key: 'vehicleModel', label: t(adminLocale, 'admin.vehicleModel') },{ key: 'vehicleColor', label: t(adminLocale, 'admin.vehicleColor') },{ key: 'customerEmail', label: t(adminLocale, 'admin.customerEmail') },{ key: 'customerPhone', label: t(adminLocale, 'admin.customerPhone') }].map(f => (
+                   <div key={f.key} className={f.key === 'customerEmail' ? 'col-span-2' : ''}>
+                     <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+                     <input type="text" value={(createForm as any)[f.key]} onChange={e => setCreateForm(p => ({ ...p, [f.key]: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent" />
+                   </div>
+                 ))}
+               </div>
+             </div>
+           </div>
+           <div className="flex gap-2 px-6 py-4 border-t" style={{ borderColor: '#e5e5e5', backgroundColor: '#fafaf5' }}>
+             <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2.5 bg-white border rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50" style={{ borderColor: '#ccc' }}>{t(adminLocale, 'admin.cancel')}</button>
+             <button type="submit" className="flex-1 text-sm font-medium py-2.5 rounded-lg" style={{ backgroundColor: '#FFCB05', color: '#1a1a1a' }}>{t(adminLocale, 'admin.createAndGenerate')}</button>
+           </div>
+         </form>
+       </div>
+     )}
+     {(generatedToken || tokenDialog) && (
+       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40 p-4" onClick={() => { setGeneratedToken(null); setTokenDialog(null); }}>
+         <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 shadow-xl max-w-md w-full">
+           {generatedToken ? (<>
+             <h2 className="font-semibold text-gray-800 mb-1 text-lg">{t(adminLocale, 'admin.linkGenerated')}</h2>
+             <div className="rounded-xl p-3 break-all text-sm font-mono mb-4" style={{ backgroundColor: '#f5f5f0' }}>{window.location.origin}{generatedToken.link}</div>
+             <div className="flex gap-2">
+               <button onClick={() => copyToClip(window.location.origin + generatedToken.link, 'dialog')} className="flex-1 text-white py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#1a1a1a' }}>{copied === 'dialog' ? t(adminLocale, 'admin.copied') : t(adminLocale, 'admin.copyLink')}</button>
+               <button onClick={() => { setGeneratedToken(null); setTokenDialog(null); }} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm">{t(adminLocale, 'admin.close')}</button>
+             </div>
+           </>) : tokenDialog ? (<>
+             <h2 className="font-semibold text-gray-800 mb-4">{t(adminLocale, 'admin.generateToken')}</h2>
+             <p className="text-sm text-gray-600 mb-4">{t(adminLocale, 'admin.contractLabel')} <strong>{tokenDialog.contractNumber}</strong></p>
+             <button onClick={() => handleGenerateToken(tokenDialog.contractId)} className="w-full text-white py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#1a1a1a' }}>{t(adminLocale, 'admin.generate')}</button>
+           </>) : null}
+         </div>
+       </div>
+     )}
+     <div className="bg-white rounded-xl shadow-sm overflow-hidden" style={{ border: '1px solid #e5e5e5' }}>
+       <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e5e5', backgroundColor: '#fafaf5' }}>
+         <div className="flex items-center justify-between">
+           <h2 className="font-semibold text-gray-800">{t(adminLocale, 'admin.contracts')}</h2>
+           {(searchQuery || statusFilter !== 'all') && (
+             <span className="text-xs text-gray-500">{filteredContracts().length} {t(adminLocale, 'admin.of')} {contracts.length} {t(adminLocale, 'admin.contractsFound')}</span>
+           )}
+         </div>
+       </div>
+       {filteredContracts().length === 0 ? (
+         <div className="p-8 text-center text-gray-400">
+           {contracts.length === 0 ? t(adminLocale, 'admin.noContracts') : t(adminLocale, 'admin.noSearchResults')}
+         </div>
+       ) : (
+         <div className="overflow-x-auto">
+           <table className="w-full">
+             <thead><tr style={{ backgroundColor: '#1a1a1a' }}>
+               <th className="px-4 py-3 w-10">
+                 <input type="checkbox" checked={selectedContracts.size === filteredContracts().length && filteredContracts().length > 0} onChange={toggleSelectAll} className="rounded border-gray-300" />
+               </th>
+               {['Contract','Client','Vehicle','Status','Photos','Tokens','Actions'].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">{h}</th>)}
+             </tr></thead>
+             <tbody className="divide-y" style={{ borderColor: '#f0f0f0' }}>
+               {filteredContracts().map(c => (
+                 <tr key={c.id} className="hover:bg-gray-50">
+                   <td className="px-4 py-3">
+                     <input type="checkbox" checked={selectedContracts.has(c.id)} onChange={() => toggleSelect(c.id)} className="rounded border-gray-300" />
+                   </td>
+                   <td className="px-4 py-3 text-sm font-medium text-gray-800">{c.contractNumber}</td>
+                   <td className="px-4 py-3 text-sm text-gray-600"><div>{c.customerName}</div>{c.customerEmail && <div className="text-xs text-gray-400">{c.customerEmail}</div>}</td>
+                   <td className="px-4 py-3 text-sm text-gray-600"><div>{c.vehicleModel}</div><div className="text-xs text-gray-400">{c.vehiclePlate}</div></td>
+                   <td className="px-4 py-3"><span className={'inline-flex px-2 py-0.5 rounded-full text-xs font-medium ' + statusBadge(c.status)}>{c.status}</span></td>
+                   <td className="px-4 py-3 text-sm text-gray-600">{c.photosSubmitted}</td>
+                   <td className="px-4 py-3">
+                     <div className="space-y-1.5">
+                       {c.tokens.map(tk => {
+                         const link = window.location.origin + '/#token=' + tk.token;
+                         return (<div key={tk.id} className="flex items-center gap-1.5">
+                           <span className={'w-1.5 h-1.5 rounded-full ' + (tk.usedAt ? 'bg-gray-300' : tk.isExpired ? 'bg-red-400' : 'bg-green-400')} />
+                           <span className="text-xs text-gray-500">{tk.usedAt ? t(adminLocale, 'admin.tokenUsed') : tk.isExpired ? t(adminLocale, 'admin.tokenExpired') : t(adminLocale, 'admin.tokenActive')}</span>
+                           <button onClick={() => copyToClip(link, tk.id)} className="text-xs px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: copied === tk.id ? '#22c55e' : '#FFCB05', color: copied === tk.id ? '#fff' : '#1a1a1a' }}>{copied === tk.id ? 'OK' : t(adminLocale, 'admin.copy')}</button>
+                         </div>);
+                       })}
+                       {c.tokens.length === 0 && <span className="text-xs text-gray-400">{t(adminLocale, 'admin.noTokens')}</span>}
+                     </div>
+                   </td>
+                   <td className="px-4 py-3">
+                     <div className="flex items-center gap-1.5">
+                       <button onClick={() => { setTokenDialog({ contractId: c.id, contractNumber: c.contractNumber }); setGeneratedToken(null); }} className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: '#1a1a1a', color: '#FFCB05' }}>+ Token</button>
+                       {deleteConfirm === c.id ? (
+                         <div className="flex items-center gap-1">
+                           <button onClick={() => handleDeleteContract(c.id)} className="text-xs font-medium px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700">{t(adminLocale, 'admin.yes')}</button>
+                           <button onClick={() => setDeleteConfirm(null)} className="text-xs font-medium px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300">{t(adminLocale, 'admin.no')}</button>
+                         </div>
+                       ) : (
+                         <button onClick={() => setDeleteConfirm(c.id)} className="text-xs font-medium px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">{t(adminLocale, 'admin.delete')}</button>
+                       )}
+                     </div>
+                   </td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+         </div>
+       )}
+     </div>
+     {deleteAllConfirm && (
+       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setDeleteAllConfirm(false)}>
+         <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-6 shadow-xl max-w-md w-full">
+           <div className="flex items-center gap-3 mb-4">
+             <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+               <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+             </div>
+             <div>
+               <h3 className="font-semibold text-gray-800 text-lg">{t(adminLocale, 'admin.deleteConfirmTitle')}</h3>
+               <p className="text-sm text-gray-500">{selectedContracts.size} {t(adminLocale, 'admin.contractsFound')}</p>
+             </div>
+           </div>
+           <p className="text-sm text-gray-600 mb-6">{t(adminLocale, 'admin.deleteConfirmMsg')}</p>
+           <div className="flex gap-3">
+             <button onClick={handleDeleteSelected} className="flex-1 bg-red-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700">{t(adminLocale, 'admin.deleteSelected')}</button>
+             <button onClick={() => setDeleteAllConfirm(false)} className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-200">{t(adminLocale, 'admin.close')}</button>
+           </div>
+         </div>
+       </div>
+     )}
+   </div>
+ </div>
+);
 }

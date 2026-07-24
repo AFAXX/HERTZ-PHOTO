@@ -1,196 +1,172 @@
 /**
- * Microsoft Graph API integration for SharePoint file uploads.
- * Supports both direct upload (<4MB) and chunked upload (>4MB via createUploadSession).
+ * Microsoft Graph API Integration Module
+ * 
+ * This module handles authentication and file uploads to SharePoint/OneDrive
+ * via Microsoft Graph API using client credentials flow (app-only).
+ * 
+ * Configuration required in .env:
+ * - GRAPH_TENANT_ID: Azure AD tenant ID
+ * - GRAPH_CLIENT_ID: App registration client ID
+ * - GRAPH_CLIENT_SECRET: App registration client secret
+ * - GRAPH_SITE_ID: SharePoint site ID
+ * - GRAPH_DRIVE_ID: Document library drive ID
  */
 
-const GRAPH_TENANT_ID = process.env.GRAPH_TENANT_ID || '';
-const GRAPH_CLIENT_ID = process.env.GRAPH_CLIENT_ID || '';
-const GRAPH_CLIENT_SECRET = process.env.GRAPH_CLIENT_SECRET || '';
-const GRAPH_SITE_ID = process.env.GRAPH_SITE_ID || '';
-const GRAPH_DRIVE_ID = process.env.GRAPH_DRIVE_ID || '';
-const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'VehicleCheckin';
-
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
-export function isGraphConfigured(): boolean {
-  return !!GRAPH_TENANT_ID && !!GRAPH_CLIENT_ID && !!GRAPH_CLIENT_SECRET && !!GRAPH_SITE_ID && !!GRAPH_DRIVE_ID;
+interface GraphTokenResponse {
+  access_token: string
+  expires_in: number
+  token_type: string
 }
 
-export async function getAccessToken(): Promise<string> {
-  // Return cached token if still valid (with 5 min buffer)
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 5 * 60 * 1000) {
-    return cachedToken.token;
-  }
-
-  const url = `https://login.microsoftonline.com/${GRAPH_TENANT_ID}/oauth2/v2.0/token`;
-  const body = new URLSearchParams({
-    client_id: GRAPH_CLIENT_ID,
-    client_secret: GRAPH_CLIENT_SECRET,
-    scope: 'https://graph.microsoft.com/.default',
-    grant_type: 'client_credentials',
-  });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to get Graph access token: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  cachedToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
-
-  return data.access_token;
+interface GraphUploadResponse {
+  id: string
+  name: string
+  webUrl: string
+  size: number
 }
 
-async function getDriveItemId(accessToken: string, folderPath: string): Promise<string> {
-  // Try to find the folder, create if not exists
-  const encodedPath = encodeURIComponent(folderPath);
-  const checkUrl = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/drives/${GRAPH_DRIVE_ID}/root:/${encodedPath}`;
+// In-memory token cache
+let tokenCache: { token: string; expiresAt: number } | null = null
 
-  const checkResponse = await fetch(checkUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+async function getAccessToken(): Promise<string> {
+  const tenantId = process.env.GRAPH_TENANT_ID
+  const clientId = process.env.GRAPH_CLIENT_ID
+  const clientSecret = process.env.GRAPH_CLIENT_SECRET
 
-  if (checkResponse.ok) {
-    const folderData = await checkResponse.json();
-    return folderData.id;
+  // If credentials are not configured, return empty (fallback to local storage)
+  if (!tenantId || tenantId === 'your-tenant-id' || !clientId || !clientSecret) {
+    console.log('[GraphAPI] Credentials not configured, using local storage fallback')
+    return ''
   }
 
-  // Create folder if it doesn't exist
-  const createUrl = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/drives/${GRAPH_DRIVE_ID}/root/children`;
-  const createResponse = await fetch(createUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: folderPath,
-      folder: {},
-      '@microsoft.graph.conflictBehavior': 'rename',
-    }),
-  });
-
-  if (!createResponse.ok) {
-    throw new Error(`Failed to create folder: ${createResponse.status}`);
+  // Check cache
+  if (tokenCache && tokenCache.expiresAt > Date.now()) {
+    return tokenCache.token
   }
 
-  const createdFolder = await createResponse.json();
-  return createdFolder.id;
+  try {
+    const response = await fetch(
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          scope: 'https://graph.microsoft.com/.default',
+          grant_type: 'client_credentials',
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.text()
+      console.error('[GraphAPI] Token acquisition failed:', error)
+      return ''
+    }
+
+    const data: GraphTokenResponse = await response.json()
+    
+    // Cache with 5 minute buffer
+    tokenCache = {
+      token: data.access_token,
+      expiresAt: Date.now() + (data.expires_in - 300) * 1000,
+    }
+
+    return data.access_token
+  } catch (error) {
+    console.error('[GraphAPI] Token acquisition error:', error)
+    return ''
+  }
 }
 
-/**
- * Upload a file to SharePoint via Microsoft Graph API.
- * For files > 4MB, uses chunked upload via createUploadSession.
- */
 export async function uploadToSharePoint(
   fileName: string,
   fileBuffer: Buffer,
-  mimeType: string,
-  contractFolder?: string
-): Promise<{ itemId: string; driveId: string; webUrl?: string }> {
-  if (!isGraphConfigured()) {
-    throw new Error('Graph API is not configured. Check environment variables.');
+  contractNumber: string
+): Promise<{ graphItemId: string; graphDriveId: string; webUrl: string } | null> {
+  const accessToken = await getAccessToken()
+  
+  if (!accessToken) {
+    console.log('[GraphAPI] No access token, skipping SharePoint upload')
+    return null
   }
 
-  const accessToken = await getAccessToken();
+  const driveId = process.env.GRAPH_DRIVE_ID
+  const siteId = process.env.GRAPH_SITE_ID
 
-  // Build the target path: GRAPH_FOLDER_PATH/contractFolder/fileName
-  const targetPath = contractFolder
-    ? `${GRAPH_FOLDER_PATH}/${contractFolder}/${fileName}`
-    : `${GRAPH_FOLDER_PATH}/${fileName}`;
+  if (!driveId && !siteId) {
+    console.log('[GraphAPI] No drive/site ID configured, skipping SharePoint upload')
+    return null
+  }
 
-  const fileSize = fileBuffer.length;
-  const encodedPath = encodeURIComponent(targetPath);
+  try {
+    // Create folder for contract if it doesn't exist
+    const folderName = `CheckIn_${contractNumber}_${new Date().toISOString().split('T')[0]}`
+    
+    let uploadEndpoint: string
+    
+    if (driveId) {
+      // Ensure folder exists
+      await fetch(
+        `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${folderName}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: folderName,
+            folder: {},
+            '@microsoft.graph.conflictBehavior': 'Rename',
+          }),
+        }
+      )
 
-  // For files < 4MB, use direct upload
-  if (fileSize < 4 * 1024 * 1024) {
-    const uploadUrl = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/drives/${GRAPH_DRIVE_ID}/root:/${encodedPath}:/content`;
-    const response = await fetch(uploadUrl, {
+      // Upload file to the folder
+      // For files < 4MB, use simple upload
+      uploadEndpoint = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${folderName}/${fileName}:/content`
+    } else {
+      // Use site-based path
+      uploadEndpoint = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${folderName}/${fileName}:/content`
+    }
+
+    const uploadResponse = await fetch(uploadEndpoint, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': mimeType,
+        'Content-Type': 'application/octet-stream',
       },
       body: fileBuffer,
-    });
+    })
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Direct upload failed: ${response.status} - ${errorText}`);
+    if (!uploadResponse.ok) {
+      const error = await uploadResponse.text()
+      console.error('[GraphAPI] Upload failed:', error)
+      return null
     }
 
-    const result = await response.json();
+    const result: GraphUploadResponse = await uploadResponse.json()
+
     return {
-      itemId: result.id,
-      driveId: result.parentReference?.driveId || GRAPH_DRIVE_ID,
+      graphItemId: result.id,
+      graphDriveId: driveId || '',
       webUrl: result.webUrl,
-    };
-  }
-
-  // For files > 4MB, use chunked upload via createUploadSession
-  const sessionUrl = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/drives/${GRAPH_DRIVE_ID}/root:/${encodedPath}:/createUploadSession`;
-  const sessionResponse = await fetch(sessionUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      item: {
-        '@microsoft.graph.conflictBehavior': 'rename',
-        name: fileName,
-      },
-    }),
-  });
-
-  if (!sessionResponse.ok) {
-    const errorText = await sessionResponse.text();
-    throw new Error(`Failed to create upload session: ${sessionResponse.status} - ${errorText}`);
-  }
-
-  const sessionData = await sessionResponse.json();
-  const uploadSessionUrl = sessionData.uploadUrl;
-
-  // Upload in chunks of 4MB
-  const chunkSize = 4 * 1024 * 1024;
-  let offset = 0;
-  let lastResult: any = null;
-
-  while (offset < fileSize) {
-    const chunkEnd = Math.min(offset + chunkSize, fileSize);
-    const chunk = fileBuffer.slice(offset, chunkEnd);
-    const contentRange = `bytes ${offset}-${chunkEnd - 1}/${fileSize}`;
-
-    const chunkResponse = await fetch(uploadSessionUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Length': chunk.length.toString(),
-        'Content-Range': contentRange,
-      },
-      body: chunk,
-    });
-
-    if (!chunkResponse.ok) {
-      const errorText = await chunkResponse.text();
-      throw new Error(`Chunk upload failed at offset ${offset}: ${chunkResponse.status} - ${errorText}`);
     }
-
-    lastResult = await chunkResponse.json();
-    offset = chunkEnd;
+  } catch (error) {
+    console.error('[GraphAPI] Upload error:', error)
+    return null
   }
+}
 
-  return {
-    itemId: lastResult.id,
-    driveId: lastResult.parentReference?.driveId || GRAPH_DRIVE_ID,
-    webUrl: lastResult.webUrl,
-  };
+export async function isGraphConfigured(): Promise<boolean> {
+  const tenantId = process.env.GRAPH_TENANT_ID
+  const clientId = process.env.GRAPH_CLIENT_ID
+  const clientSecret = process.env.GRAPH_CLIENT_SECRET
+  return !!(
+    tenantId && tenantId !== 'your-tenant-id' &&
+    clientId && clientId !== 'your-client-id' &&
+    clientSecret && clientSecret !== 'your-client-secret'
+  )
 }

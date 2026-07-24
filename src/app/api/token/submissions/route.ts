@@ -1,33 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// GET - List all media submissions for a token
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const token = searchParams.get('token');
+    const token = request.nextUrl.searchParams.get('token');
+    if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 });
 
-    if (!token) {
-      return NextResponse.json({ error: 'Missing token' }, { status: 400 });
-    }
+    const accessToken = await db.accessToken.findUnique({ where: { token }, include: { contract: true } });
+    if (!accessToken) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
 
-    const accessToken = await db.accessToken.findUnique({
-      where: { token },
-      include: { contract: true },
-    });
-
-    if (!accessToken) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 404 });
-    }
-
-    const submissions = await db.mediaSubmission.findMany({
+    const submissions = await db.photoSubmission.findMany({
       where: { contractId: accessToken.contractId },
-      include: { requirement: true },
-      orderBy: { uploadedAt: 'desc' },
+      select: { id: true, localPath: true, requirementId: true, fileName: true, uploadedAt: true },
+      orderBy: { uploadedAt: 'asc' },
     });
 
     return NextResponse.json({ submissions });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error('Failed to load submissions:', error);
+    return NextResponse.json({ error: 'Failed to load submissions' }, { status: 500 });
   }
 }
